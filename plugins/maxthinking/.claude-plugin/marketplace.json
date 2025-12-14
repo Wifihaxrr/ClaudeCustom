@@ -1,0 +1,41 @@
+{
+  "name": "ClaudeCustom",
+  "owner": {
+    "name": "Wifihaxrr",
+    "url": "https://github.com/Wifihaxrr"
+  },
+  "metadata": {
+    "description": "MaxThinking Plugin Marketplace - Elite deep-analysis plugins for Claude Code",
+    "version": "1.0.0",
+    "homepage": "https://github.com/Wifihaxrr/ClaudeCustom"
+  },
+  "plugins": [
+    {
+      "name": "maxthinking",
+      "source": "./plugins/maxthinking",
+      "description": "Elite deep-analysis with 6 specialist agents. Use /maxthinking for any stack, /maxthinkingrust for Rust Oxide/uMod plugins, /maxthinkingwow for WoW Eluna Lua scripting.",
+      "version": "1.0.0",
+      "author": {
+        "name": "MaxThinking"
+      },
+      "category": "productivity",
+      "keywords": [
+        "plan",
+        "explore",
+        "refactoring",
+        "testing",
+        "code-review",
+        "workflow",
+        "debugging",
+        "rust",
+        "oxide",
+        "umod",
+        "wow",
+        "eluna",
+        "lua",
+        "game",
+        "server"
+      ]
+    }
+  ]
+}
