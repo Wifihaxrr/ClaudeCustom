@@ -1000,3 +1000,236 @@ foreach (var item in cost)
     float amount = item.amount;
 }
 ```
+
+
+---
+
+## COMPLETE HOOK SIGNATURES (EXACT - DO NOT GUESS!)
+
+### Player Hooks
+```csharp
+void OnPlayerConnected(BasePlayer player)
+void OnPlayerDisconnected(BasePlayer player, string reason)
+void OnPlayerSleep(BasePlayer player)
+void OnPlayerSleepEnded(BasePlayer player)
+void OnPlayerRespawned(BasePlayer player)
+void OnPlayerDeath(BasePlayer player, HitInfo info)
+void OnPlayerWound(BasePlayer player, HitInfo info)
+void OnPlayerRecover(BasePlayer player)
+object OnPlayerChat(BasePlayer player, string message, ConVar.Chat.ChatChannel channel)
+object OnPlayerCommand(BasePlayer player, string command, string[] args)
+void OnPlayerInput(BasePlayer player, InputState input)
+```
+
+### Entity Hooks
+```csharp
+void OnEntitySpawned(BaseNetworkable entity)
+void OnEntityKill(BaseNetworkable entity)
+void OnEntityDeath(BaseCombatEntity entity, HitInfo info)
+object OnEntityTakeDamage(BaseCombatEntity entity, HitInfo info)
+void OnEntityBuilt(Planner planner, GameObject go)
+```
+
+### Building Hooks
+```csharp
+object CanBuild(Planner planner, Construction prefab, Construction.Target target)
+void OnStructureUpgrade(BuildingBlock block, BasePlayer player, BuildingGrade.Enum grade)
+object CanChangeGrade(BasePlayer player, BuildingBlock block, BuildingGrade.Enum grade)
+void OnStructureRepair(BaseCombatEntity entity, BasePlayer player)
+void OnStructureRotate(BuildingBlock block, BasePlayer player)
+void OnHammerHit(BasePlayer player, HitInfo info)
+```
+
+### Item Hooks
+```csharp
+void OnItemAddedToContainer(ItemContainer container, Item item)
+void OnItemRemovedFromContainer(ItemContainer container, Item item)
+object CanMoveItem(Item item, PlayerInventory inventory, ItemContainerId targetContainerId, int targetSlot, int amount)
+void OnItemDropped(Item item, BaseEntity entity)
+object OnItemPickup(Item item, BasePlayer player)
+void OnItemCraftFinished(ItemCraftTask task, Item item, ItemCrafter crafter)
+object CanCraft(ItemCrafter crafter, ItemBlueprint bp, int amount)
+```
+
+### Loot Hooks
+```csharp
+void OnLootEntity(BasePlayer player, BaseEntity entity)
+void OnLootEntityEnd(BasePlayer player, BaseCombatEntity entity)
+object CanLootEntity(BasePlayer player, StorageContainer container)
+object CanLootEntity(BasePlayer player, LootableCorpse corpse)
+object CanLootEntity(BasePlayer player, DroppedItemContainer container)
+object CanLootEntity(ResourceContainer container, BasePlayer player)
+void OnLootSpawn(LootContainer container)
+```
+
+### Gather Hooks
+```csharp
+object OnDispenserGather(ResourceDispenser dispenser, BasePlayer player, Item item)
+object OnDispenserBonus(ResourceDispenser dispenser, BasePlayer player, Item item)
+object OnCollectiblePickup(CollectibleEntity collectible, BasePlayer player)
+void OnCollectiblePickup(CollectibleEntity collectible, BasePlayer player, Item item)
+object OnGrowableGather(GrowableEntity plant, Item item, BasePlayer player)
+```
+
+### Vehicle Hooks
+```csharp
+void OnEntityMounted(BaseMountable mountable, BasePlayer player)
+void OnEntityDismounted(BaseMountable mountable, BasePlayer player)
+object CanMountEntity(BasePlayer player, BaseMountable mountable)
+object CanDismountEntity(BasePlayer player, BaseMountable mountable)
+```
+
+### Combat Hooks
+```csharp
+object OnPlayerAttack(BasePlayer attacker, HitInfo info)
+void OnWeaponFired(BaseProjectile projectile, BasePlayer player, ItemModProjectile mod, ProtoBuf.ProjectileShoot projectiles)
+object CanBeWounded(BasePlayer player, HitInfo info)
+object OnNpcTarget(BaseNpc npc, BaseEntity target)
+object OnTurretTarget(AutoTurret turret, BaseCombatEntity target)
+```
+
+### Server Hooks
+```csharp
+void OnServerInitialized()
+void OnServerSave()
+void OnNewSave(string filename)
+void OnPluginLoaded(Plugin plugin)
+void OnPluginUnloaded(Plugin plugin)
+```
+
+---
+
+## MORE COMMON PREFABS
+
+### Deployables
+```csharp
+// Sleeping bags
+"assets/prefabs/deployable/sleeping bag/sleepingbag_leather_deployed.prefab"
+"assets/prefabs/deployable/bed/bed_deployed.prefab"
+
+// Tool cupboard
+"assets/prefabs/deployable/tool cupboard/cupboard.tool.deployed.prefab"
+
+// Workbenches
+"assets/prefabs/deployable/workbench/workbench1.deployed.prefab"
+"assets/prefabs/deployable/workbench/workbench2.deployed.prefab"
+"assets/prefabs/deployable/workbench/workbench3.deployed.prefab"
+
+// Repair bench
+"assets/prefabs/deployable/repair bench/repairbench_deployed.prefab"
+
+// Research table
+"assets/prefabs/deployable/research table/researchtable_deployed.prefab"
+
+// Mixing table
+"assets/prefabs/deployable/mixingtable/mixingtable.deployed.prefab"
+
+// Vending machine
+"assets/prefabs/deployable/vendingmachine/vendingmachine.deployed.prefab"
+
+// Recycler
+"assets/bundled/prefabs/static/recycler_static.prefab"
+```
+
+### Effects
+```csharp
+// Explosions
+"assets/bundled/prefabs/fx/explosions/explosion_01.prefab"
+"assets/bundled/prefabs/fx/survey_explosion.prefab"
+
+// Fire
+"assets/bundled/prefabs/fx/impacts/additive/fire.prefab"
+"assets/bundled/prefabs/fx/fire/fire_v3.prefab"
+
+// Sparks
+"assets/bundled/prefabs/fx/impacts/spark_metal.prefab"
+"assets/bundled/prefabs/fx/impacts/stab/rock/stab_rock_01.prefab"
+
+// Mining
+"assets/bundled/prefabs/fx/ore_break.prefab"
+"assets/bundled/prefabs/fx/impacts/additive/explosion.prefab"
+
+// UI sounds
+"assets/prefabs/locks/keypad/effects/lock.code.lock.prefab"
+"assets/prefabs/locks/keypad/effects/lock.code.unlock.prefab"
+"assets/prefabs/locks/keypad/effects/lock.code.denied.prefab"
+"assets/bundled/prefabs/fx/notice/item.select.fx.prefab"
+"assets/bundled/prefabs/fx/notice/loot.drag.grab.fx.prefab"
+```
+
+### Vehicles (Complete List)
+```csharp
+// Helicopters
+"assets/content/vehicles/minicopter/minicopter.entity.prefab"
+"assets/content/vehicles/scrap heli carrier/scraptransporthelicopter.prefab"
+"assets/content/vehicles/attackhelicopter/attackhelicopter.entity.prefab"
+
+// Boats
+"assets/content/vehicles/boats/rowboat/rowboat.prefab"
+"assets/content/vehicles/boats/rhib/rhib.prefab"
+"assets/content/vehicles/boats/kayak/kayak.prefab"
+"assets/content/vehicles/boats/tugboat/tugboat.prefab"
+
+// Ground
+"assets/content/vehicles/sedan_a/sedantest.entity.prefab"
+"assets/content/vehicles/snowmobiles/snowmobile.prefab"
+"assets/content/vehicles/snowmobiles/tomahasnowmobile.prefab"
+"assets/content/vehicles/bikes/pedalbike.prefab"
+"assets/content/vehicles/bikes/motorbike.prefab"
+
+// Submarines
+"assets/content/vehicles/submarine/submarinesolo.entity.prefab"
+"assets/content/vehicles/submarine/submarineduo.entity.prefab"
+
+// Horse
+"assets/rust.ai/agents/horse/ridablehorse.prefab"
+
+// Hot air balloon
+"assets/prefabs/deployable/hot air balloon/hotairballoon.prefab"
+
+// Trains
+"assets/content/vehicles/trains/workcart/workcart.entity.prefab"
+"assets/content/vehicles/trains/locomotive/locomotive.entity.prefab"
+```
+
+---
+
+## ITEM IDS (Common Items)
+
+```csharp
+// Resources
+-932201673   // scrap
+-151838493   // wood
+-2099697608  // stone
+374890416    // metal.fragments
+317398316    // metal.ore
+-1581843485  // sulfur
+-1157596551  // sulfur.ore
+-1779180711  // cloth
+-946369541   // lowgradefuel
+69511070     // crude.oil
+-1779183908  // leather
+-2027793839  // fat.animal
+
+// Weapons
+1545779598   // rifle.ak
+-1812555177  // rifle.lr300
+-904863145   // rifle.bolt
+-1335497659  // smg.mp5
+-1367281941  // smg.thompson
+1318558775   // pistol.m92
+-852563019   // pistol.python
+-778367295   // shotgun.pump
+-1009492144  // shotgun.spas12
+
+// Tools
+-1302129395  // pickaxe
+-1440143841  // hatchet
+200773292    // hammer
+-1370759135  // building.planner
+
+// Medical
+254522515    // syringe.medical
+-1432674913  // bandage
+-789202811   // largemedkit
+```

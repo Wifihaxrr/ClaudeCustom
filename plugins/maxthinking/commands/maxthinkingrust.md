@@ -17,31 +17,52 @@ version: 2.1.0
 
 # MAXTHINKING RUST - OXIDE/UMOD SPECIALIST
 
-## CRITICAL: REFERENCE FILES - READ THESE FIRST!
+## ⚠️ MANDATORY: READ REFERENCE FILES BEFORE ANY CODE ⚠️
 
-**BEFORE starting any plugin development, READ these files:**
+**YOU MUST USE THE `Read File` TOOL TO READ THESE FILES BEFORE WRITING ANY CODE:**
 
-1. **`maxthinking/commands/rust_examples.md`** - COMPLETE WORKING PLUGINS
-   - Full MiningGun plugin (UI, input, timers, effects, resource gathering)
-   - Full BrightNights plugin (config, permissions, TOD_Sky)
-   - Full AutoDoors plugin (data storage, timers, door hooks)
-   - Full ChestStacks plugin (MonoBehaviour, ProtoStorage, input)
-   - Full Economics plugin (CovalencePlugin, API methods, data persistence)
-   - Full NoTechTree plugin (simple hook blocking, Unsubscribe pattern)
-   - Full BGrade plugin (MonoBehaviour on players, extension methods, building upgrades)
-   - Full QuickSmelt plugin (FacepunchBehaviour controller, furnace modification)
-   - Full TurretConfig plugin (entity modification, permission-based settings)
-   - **COPY PATTERNS EXACTLY FROM THESE FILES**
+### STEP 1: Read the examples file (REQUIRED)
+```
+Read File: maxthinking/commands/rust_examples.md
+```
+This file contains 50+ COMPLETE WORKING PLUGINS including:
+- MiningGun (UI, input, timers, effects, resource gathering)
+- BrightNights (config, permissions, TOD_Sky events)
+- AutoDoors (data storage, timers, door hooks)
+- ChestStacks (MonoBehaviour, ProtoStorage, input handling)
+- Economics (CovalencePlugin, API methods, data persistence)
+- NoTechTree (simple hook blocking, Unsubscribe pattern)
+- BGrade (MonoBehaviour on players, building upgrades)
+- QuickSmelt (FacepunchBehaviour, furnace modification)
+- TurretConfig (entity modification, permission-based settings)
+- Kits (complex UI, data storage, cooldowns, permissions)
+- RemoverTool (raycasting, building removal, refunds)
+- ZoneManager (spatial queries, zone flags, triggers)
+- VehicleLicence (vehicle spawning, ownership, Friends/Clans)
+- Shop (full UI system, economics integration, NPC vendors)
+- Backpacks (inventory extension, container management)
+- **COPY PATTERNS EXACTLY - DO NOT INVENT YOUR OWN**
 
-2. **`maxthinking/commands/rust_reference.md`** - API Reference
-   - ResourceDispenser vs ResourceContainer (DIFFERENT CLASSES!)
-   - ItemAmount vs Item (DIFFERENT CLASSES!)
-   - All hook signatures (EXACT - do not guess!)
-   - Entity types and their properties
+### STEP 2: Read the API reference (REQUIRED)
+```
+Read File: maxthinking/commands/rust_reference.md
+```
+Contains:
+- ResourceDispenser vs ResourceContainer (DIFFERENT CLASSES!)
+- ItemAmount vs Item (DIFFERENT CLASSES!)
+- All hook signatures (EXACT - do not guess!)
+- Entity types and their properties
+- Common prefab paths
 
-3. **`maxthinking/commands/rust_memory.md`** - Session memory
-   - Common errors and fixes
-   - UPDATE this file when you fix errors
+### STEP 3: Check session memory
+```
+Read File: maxthinking/commands/rust_memory.md
+```
+Contains:
+- Common errors and their fixes
+- UPDATE this file when you fix new errors
+
+## ⛔ DO NOT WRITE CODE UNTIL YOU HAVE READ THESE FILES ⛔
 
 ## CRITICAL CLASS CONFUSION TO AVOID
 
@@ -759,7 +780,29 @@ Read through the ENTIRE code one more time:
 
 When `/maxthinkingrust` is invoked:
 
-1. **"MaxThinking Rust engaged. Analyzing Oxide plugin requirements..."**
+## ⚠️ STEP 0: MANDATORY FILE READING (DO THIS FIRST!) ⚠️
+
+**YOU MUST READ THESE FILES BEFORE DOING ANYTHING ELSE:**
+
+```
+Use the "Read File" tool to read: maxthinking/commands/rust_examples.md
+```
+
+This file contains 50+ complete working plugin examples. You MUST read it and copy patterns from it.
+
+```
+Use the "Read File" tool to read: maxthinking/commands/rust_reference.md
+```
+
+This file contains API reference and critical class information.
+
+**DO NOT SKIP THIS STEP. DO NOT WRITE CODE WITHOUT READING THESE FILES FIRST.**
+
+---
+
+1. **"MaxThinking Rust engaged. Reading reference files..."**
+   - READ `maxthinking/commands/rust_examples.md` (REQUIRED)
+   - READ `maxthinking/commands/rust_reference.md` (REQUIRED)
 
 2. **Phase 1:** Scan existing .cs plugins for patterns
 
@@ -767,7 +810,7 @@ When `/maxthinkingrust` is invoked:
 
 4. **Phase 3:** Iterate until confident (2-5 passes)
 
-5. **Phase 4:** Write the complete plugin code
+5. **Phase 4:** Write the complete plugin code (COPY PATTERNS FROM rust_examples.md!)
 
 6. **Phase 5: MANDATORY VALIDATION** - Run ALL 5 validation passes
    - Pass 1: Syntax & Structure ✓
