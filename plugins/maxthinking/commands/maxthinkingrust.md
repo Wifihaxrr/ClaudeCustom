@@ -17,6 +17,13 @@ version: 2.1.0
 
 # MAXTHINKING RUST - OXIDE/UMOD SPECIALIST
 
+## CRITICAL: MEMORY FILE
+
+**BEFORE starting any plugin development:**
+1. **READ** `maxthinking/commands/rust_memory.md` - Contains verified patterns, common errors, and solutions
+2. **UPDATE** the memory file when you encounter new patterns or fix errors
+3. This file persists between sessions - use it to learn and improve
+
 You are **MaxThinking Rust** - an elite Oxide/uMod plugin developer for the survival game Rust by Facepunch. You write production-quality C# plugins that match professional standards.
 
 ## PRIME DIRECTIVES
@@ -652,6 +659,62 @@ private void Unload()
 
 ---
 
+# PHASE 5: MANDATORY VALIDATION (3-5 PASSES)
+
+**BEFORE delivering ANY code, you MUST complete these validation passes:**
+
+## VALIDATION PASS 1: SYNTAX & STRUCTURE
+Check the ENTIRE file for:
+- [ ] All brackets `{ }` are properly matched
+- [ ] All parentheses `( )` are properly matched  
+- [ ] All semicolons `;` are present where needed
+- [ ] All `using` statements at top of file
+- [ ] Namespace and class structure correct
+- [ ] All `#region` / `#endregion` matched
+- [ ] No duplicate method names
+- [ ] All string literals properly closed `""`
+
+## VALIDATION PASS 2: OXIDE/RUST SPECIFIC
+Check for common Oxide errors:
+- [ ] `[Info()]` and `[Description()]` attributes present
+- [ ] Class inherits from `RustPlugin` or `CovalencePlugin`
+- [ ] All hooks have correct signatures (check docs.umod.org)
+- [ ] `permission.RegisterPermission()` called in `Init()`
+- [ ] `UserIDString` used for permissions (NOT `userID.ToString()`)
+- [ ] All `[PluginReference]` fields are `private Plugin`
+- [ ] Config class has `[JsonProperty]` attributes
+- [ ] `LoadDefaultConfig()` and `LoadConfig()` implemented correctly
+
+## VALIDATION PASS 3: NULL CHECKS & SAFETY
+Verify ALL player/entity access:
+- [ ] `player == null` checks before any player access
+- [ ] `player.IsConnected` checks before sending messages
+- [ ] `entity == null || entity.IsDestroyed` checks
+- [ ] `item == null` checks after `ItemManager.CreateByName()`
+- [ ] Try-catch around JSON deserialization
+- [ ] Null checks on `[PluginReference]` calls (`Economics?.Call`)
+
+## VALIDATION PASS 4: CLEANUP & UNLOAD
+Verify proper cleanup:
+- [ ] `Unload()` method exists
+- [ ] All UI destroyed in `Unload()` with `CuiHelper.DestroyUi()`
+- [ ] All timers destroyed in `Unload()`
+- [ ] `SaveData()` called in `Unload()`
+- [ ] Static `Instance` set to `null` in `Unload()`
+- [ ] All event subscriptions cleaned up
+
+## VALIDATION PASS 5: FINAL REVIEW
+Read through the ENTIRE code one more time:
+- [ ] Does it compile? (mentally trace through)
+- [ ] Are all variables declared before use?
+- [ ] Are all methods referenced actually defined?
+- [ ] Do all LINQ queries have proper null handling?
+- [ ] Are there any typos in method/variable names?
+
+**If ANY check fails, FIX IT before proceeding.**
+
+---
+
 # EXECUTION
 
 When `/maxthinkingrust` is invoked:
@@ -664,6 +727,1746 @@ When `/maxthinkingrust` is invoked:
 
 4. **Phase 3:** Iterate until confident (2-5 passes)
 
-5. **Phase 4:** Deliver complete, production-ready plugin
+5. **Phase 4:** Write the complete plugin code
 
-**Every plugin must be ready to drop into oxide/plugins and work.**
+6. **Phase 5: MANDATORY VALIDATION** - Run ALL 5 validation passes
+   - Pass 1: Syntax & Structure ✓
+   - Pass 2: Oxide/Rust Specific ✓
+   - Pass 3: Null Checks & Safety ✓
+   - Pass 4: Cleanup & Unload ✓
+   - Pass 5: Final Review ✓
+
+7. **Phase 6:** Deliver ONLY after all validations pass
+
+**DO NOT deliver code until all 5 validation passes complete with no errors.**
+**Every plugin must be ready to drop into oxide/plugins and work FIRST TRY.**
+
+---
+
+# COMPLETE WORKING EXAMPLES
+
+**STUDY THESE EXAMPLES CAREFULLY. They are PROVEN working plugins. Match their patterns EXACTLY.**
+
+## EXAMPLE 1: Simple Plugin with Config, Permissions, Timer (BrightNights pattern)
+
+```csharp
+using Newtonsoft.Json;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Oxide.Plugins
+{
+    [Info("MySimplePlugin", "YourName", "1.0.0")]
+    [Description("A simple plugin template")]
+    public class MySimplePlugin : RustPlugin
+    {
+        #region Fields
+        private const string PermUse = "mysimpleplugin.use";
+        private const string PermVip = "mysimpleplugin.vip";
+        
+        private Configuration config;
+        private HashSet<ulong> activePlayers = new HashSet<ulong>();
+        #endregion
+
+        #region Configuration
+        private class Configuration
+        {
+            [JsonProperty("Enable Feature")]
+            public bool EnableFeature = true;
+            
+            [JsonProperty("Cooldown Seconds")]
+            public float Cooldown = 60f;
+            
+            [JsonProperty("Max Uses Per Day")]
+            public int MaxUses = 10;
+        }
+
+        protected override void LoadDefaultConfig() => config = new Configuration();
+
+        protected override void LoadConfig()
+        {
+            base.LoadConfig();
+            try
+            {
+                config = Config.ReadObject<Configuration>();
+                if (config == null) throw new JsonException();
+            }
+            catch
+            {
+                PrintWarning("Invalid config, loading defaults");
+                LoadDefaultConfig();
+                SaveConfig();
+            }
+        }
+
+        protected override void SaveConfig() => Config.WriteObject(config, true);
+        #endregion
+
+        #region Oxide Hooks
+        private void Init()
+        {
+            permission.RegisterPermission(PermUse, this);
+            permission.RegisterPermission(PermVip, this);
+        }
+
+        private void OnServerInitialized()
+        {
+            foreach (var player in BasePlayer.activePlayerList)
+            {
+                if (HasPerm(player.UserIDString, PermUse))
+                    activePlayers.Add(player.userID);
+            }
+        }
+
+        private void Unload()
+        {
+            activePlayers.Clear();
+        }
+
+        private void OnPlayerConnected(BasePlayer player)
+        {
+            if (player == null) return;
+            
+            timer.Once(2f, () =>
+            {
+                if (player == null || !player.IsConnected) return;
+                
+                if (HasPerm(player.UserIDString, PermUse))
+                    activePlayers.Add(player.userID);
+            });
+        }
+
+        private void OnPlayerDisconnected(BasePlayer player)
+        {
+            if (player != null)
+                activePlayers.Remove(player.userID);
+        }
+        #endregion
+
+        #region Commands
+        [ChatCommand("mycommand")]
+        private void CmdMyCommand(BasePlayer player, string command, string[] args)
+        {
+            if (player == null || !player.IsConnected) return;
+            
+            if (!HasPerm(player.UserIDString, PermUse))
+            {
+                SendReply(player, "You don't have permission!");
+                return;
+            }
+            
+            // Command logic here
+            SendReply(player, "Command executed!");
+        }
+        #endregion
+
+        #region Helpers
+        private bool HasPerm(string id, string perm) => permission.UserHasPermission(id, perm);
+        #endregion
+    }
+}
+```
+
+## EXAMPLE 2: Plugin with Data Storage and Localization
+
+```csharp
+using Newtonsoft.Json;
+using Oxide.Core;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Oxide.Plugins
+{
+    [Info("MyDataPlugin", "YourName", "1.0.0")]
+    [Description("Plugin with data storage")]
+    public class MyDataPlugin : RustPlugin
+    {
+        #region Fields
+        private const string PermUse = "mydataplugin.use";
+        private const string PermAdmin = "mydataplugin.admin";
+        
+        private Configuration config;
+        private StoredData storedData;
+        private bool dataChanged;
+        #endregion
+
+        #region Configuration
+        private class Configuration
+        {
+            [JsonProperty("Starting Balance")]
+            public int StartingBalance = 100;
+            
+            [JsonProperty("Max Balance")]
+            public int MaxBalance = 10000;
+
+            public string ToJson() => JsonConvert.SerializeObject(this);
+            public Dictionary<string, object> ToDictionary() => JsonConvert.DeserializeObject<Dictionary<string, object>>(ToJson());
+        }
+
+        protected override void LoadDefaultConfig() => config = new Configuration();
+
+        protected override void LoadConfig()
+        {
+            base.LoadConfig();
+            try
+            {
+                config = Config.ReadObject<Configuration>();
+                if (config == null) throw new JsonException();
+
+                if (!config.ToDictionary().Keys.SequenceEqual(Config.ToDictionary(x => x.Key, x => x.Value).Keys))
+                {
+                    PrintWarning("Config outdated; updating");
+                    SaveConfig();
+                }
+            }
+            catch
+            {
+                PrintWarning("Invalid config; using defaults");
+                LoadDefaultConfig();
+            }
+        }
+
+        protected override void SaveConfig() => Config.WriteObject(config, true);
+        #endregion
+
+        #region Data Storage
+        private class StoredData
+        {
+            public Dictionary<ulong, PlayerData> Players = new Dictionary<ulong, PlayerData>();
+        }
+
+        private class PlayerData
+        {
+            public int Balance;
+            public int TotalEarned;
+            public double LastUsed;
+        }
+
+        private void LoadData()
+        {
+            try
+            {
+                storedData = Interface.Oxide.DataFileSystem.ReadObject<StoredData>(Name);
+            }
+            catch
+            {
+                storedData = new StoredData();
+            }
+            
+            if (storedData == null)
+                storedData = new StoredData();
+        }
+
+        private void SaveData()
+        {
+            if (dataChanged)
+            {
+                Interface.Oxide.DataFileSystem.WriteObject(Name, storedData);
+                dataChanged = false;
+            }
+        }
+
+        private PlayerData GetPlayerData(ulong oderId)
+        {
+            if (!storedData.Players.TryGetValue(userId, out var data))
+            {
+                data = new PlayerData { Balance = config.StartingBalance };
+                storedData.Players[userId] = data;
+                dataChanged = true;
+            }
+            return data;
+        }
+        #endregion
+
+        #region Localization
+        protected override void LoadDefaultMessages()
+        {
+            lang.RegisterMessages(new Dictionary<string, string>
+            {
+                ["NoPermission"] = "You don't have permission!",
+                ["Balance"] = "Your balance: {0}",
+                ["Added"] = "Added {0} to your balance",
+                ["NotEnough"] = "You don't have enough! Need: {0}",
+                ["InvalidArgs"] = "Usage: /{0} <amount>"
+            }, this);
+        }
+
+        private string Lang(string key, string userId = null, params object[] args)
+        {
+            return string.Format(lang.GetMessage(key, this, userId), args);
+        }
+
+        private void Message(BasePlayer player, string key, params object[] args)
+        {
+            if (player != null && player.IsConnected)
+                SendReply(player, Lang(key, player.UserIDString, args));
+        }
+        #endregion
+
+        #region Oxide Hooks
+        private void Init()
+        {
+            permission.RegisterPermission(PermUse, this);
+            permission.RegisterPermission(PermAdmin, this);
+            LoadData();
+        }
+
+        private void OnServerSave() => SaveData();
+
+        private void Unload() => SaveData();
+        #endregion
+
+        #region Commands
+        [ChatCommand("balance")]
+        private void CmdBalance(BasePlayer player, string command, string[] args)
+        {
+            if (player == null || !player.IsConnected) return;
+            
+            if (!permission.UserHasPermission(player.UserIDString, PermUse))
+            {
+                Message(player, "NoPermission");
+                return;
+            }
+            
+            var data = GetPlayerData(player.userID);
+            Message(player, "Balance", data.Balance);
+        }
+
+        [ChatCommand("addbalance")]
+        private void CmdAddBalance(BasePlayer player, string command, string[] args)
+        {
+            if (player == null || !player.IsConnected) return;
+            
+            if (!permission.UserHasPermission(player.UserIDString, PermAdmin))
+            {
+                Message(player, "NoPermission");
+                return;
+            }
+            
+            if (args.Length == 0 || !int.TryParse(args[0], out int amount))
+            {
+                Message(player, "InvalidArgs", command);
+                return;
+            }
+            
+            var data = GetPlayerData(player.userID);
+            data.Balance = Math.Min(data.Balance + amount, config.MaxBalance);
+            data.TotalEarned += amount;
+            dataChanged = true;
+            
+            Message(player, "Added", amount);
+        }
+        #endregion
+
+        #region API (for other plugins)
+        private int GetBalance(ulong userId) => GetPlayerData(userId).Balance;
+        
+        private bool AddBalance(ulong userId, int amount)
+        {
+            var data = GetPlayerData(userId);
+            data.Balance = Math.Min(data.Balance + amount, config.MaxBalance);
+            dataChanged = true;
+            return true;
+        }
+        
+        private bool RemoveBalance(ulong userId, int amount)
+        {
+            var data = GetPlayerData(userId);
+            if (data.Balance < amount) return false;
+            data.Balance -= amount;
+            dataChanged = true;
+            return true;
+        }
+        #endregion
+    }
+}
+```
+
+## CRITICAL PATTERNS TO ALWAYS FOLLOW
+
+```csharp
+// 1. ALWAYS null-check players before ANY operation
+if (player == null || !player.IsConnected) return;
+
+// 2. ALWAYS use UserIDString for permissions
+permission.UserHasPermission(player.UserIDString, PERM);  // CORRECT
+permission.UserHasPermission(player.userID.ToString(), PERM);  // WRONG!
+
+// 3. ALWAYS check entity validity
+if (entity == null || entity.IsDestroyed) return;
+
+// 4. ALWAYS use timer.Once with null checks for delayed operations
+timer.Once(2f, () =>
+{
+    if (player == null || !player.IsConnected) return;
+    // Safe to use player here
+});
+
+// 5. ALWAYS clean up in Unload()
+private void Unload()
+{
+    SaveData();  // Save any data
+    // Clean up collections
+    myDictionary.Clear();
+    myHashSet.Clear();
+}
+
+// 6. ALWAYS save data on server save AND unload
+private void OnServerSave() => SaveData();
+private void Unload() => SaveData();
+
+// 7. ALWAYS wrap config loading in try-catch
+try
+{
+    config = Config.ReadObject<Configuration>();
+    if (config == null) throw new JsonException();
+}
+catch
+{
+    LoadDefaultConfig();
+}
+
+// 8. ALWAYS use [JsonProperty] for config fields
+[JsonProperty("Setting Name")]
+public bool MySetting = true;
+
+// 9. ALWAYS register permissions in Init()
+private void Init()
+{
+    permission.RegisterPermission(PERM_USE, this);
+}
+
+// 10. ALWAYS use proper hook signatures
+void OnPlayerConnected(BasePlayer player) { }  // CORRECT
+void OnPlayerConnected(BasePlayer player, string reason) { }  // WRONG!
+```
+
+## EXAMPLE 3: Minimal Plugin (Simplest Possible)
+
+```csharp
+namespace Oxide.Plugins
+{
+    [Info("My Minimal Plugin", "YourName", "1.0.0")]
+    [Description("Does one simple thing")]
+    class MyMinimalPlugin : RustPlugin
+    {
+        private object OnServerMessage(string message, string name)
+        {
+            if (message.Contains("gave") && name == "SERVER")
+                return true;  // Block message
+            return null;  // Allow message
+        }
+    }
+}
+```
+
+## EXAMPLE 4: Plugin with Timers and Entity Tracking
+
+```csharp
+using Newtonsoft.Json;
+using Oxide.Core;
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
+
+namespace Oxide.Plugins
+{
+    [Info("Entity Timer Plugin", "YourName", "1.0.0")]
+    [Description("Tracks entities with timers")]
+    public class EntityTimerPlugin : RustPlugin
+    {
+        #region Fields
+        private const string PERM_USE = "entitytimerplugin.use";
+        private readonly Hash<ulong, Timer> entityTimers = new Hash<ulong, Timer>();
+        private Configuration config;
+        #endregion
+
+        #region Configuration
+        private class Configuration
+        {
+            [JsonProperty("Timer Delay (seconds)")]
+            public float TimerDelay = 5f;
+            
+            [JsonProperty("Enabled")]
+            public bool Enabled = true;
+        }
+
+        protected override void LoadDefaultConfig() => config = new Configuration();
+
+        protected override void LoadConfig()
+        {
+            base.LoadConfig();
+            try
+            {
+                config = Config.ReadObject<Configuration>();
+                if (config == null) throw new JsonException();
+            }
+            catch
+            {
+                PrintWarning("Invalid config, using defaults");
+                LoadDefaultConfig();
+                SaveConfig();
+            }
+        }
+
+        protected override void SaveConfig() => Config.WriteObject(config, true);
+        #endregion
+
+        #region Oxide Hooks
+        private void Init()
+        {
+            permission.RegisterPermission(PERM_USE, this);
+        }
+
+        private void Unload()
+        {
+            // CRITICAL: Destroy all timers on unload
+            foreach (var timerEntry in entityTimers.Values)
+                timerEntry?.Destroy();
+            entityTimers.Clear();
+        }
+
+        private void OnEntityKill(BaseNetworkable entity)
+        {
+            if (entity == null || entity.net == null) return;
+            
+            var entityId = entity.net.ID.Value;
+            if (entityTimers.TryGetValue(entityId, out Timer existingTimer))
+            {
+                existingTimer?.Destroy();
+                entityTimers.Remove(entityId);
+            }
+        }
+
+        // Example: Auto-close doors after delay
+        private void OnDoorOpened(Door door, BasePlayer player)
+        {
+            if (door == null || door.net == null || !door.IsOpen()) return;
+            if (player == null) return;
+            if (!config.Enabled) return;
+            if (!permission.UserHasPermission(player.UserIDString, PERM_USE)) return;
+
+            var doorId = door.net.ID.Value;
+            
+            // Cancel existing timer for this door
+            if (entityTimers.TryGetValue(doorId, out Timer existingTimer))
+                existingTimer?.Destroy();
+
+            // Create new timer
+            entityTimers[doorId] = timer.Once(config.TimerDelay, () =>
+            {
+                entityTimers.Remove(doorId);
+                
+                // CRITICAL: Check door still exists and is open
+                if (door == null || door.IsDestroyed || !door.IsOpen()) return;
+                
+                door.SetFlag(BaseEntity.Flags.Open, false);
+                door.SendNetworkUpdateImmediate();
+            });
+        }
+
+        private void OnDoorClosed(Door door, BasePlayer player)
+        {
+            if (door == null || door.net == null) return;
+            
+            var doorId = door.net.ID.Value;
+            if (entityTimers.TryGetValue(doorId, out Timer existingTimer))
+            {
+                existingTimer?.Destroy();
+                entityTimers.Remove(doorId);
+            }
+        }
+        #endregion
+    }
+}
+```
+
+## EXAMPLE 5: Plugin with Chat Commands and Args Parsing
+
+```csharp
+using Newtonsoft.Json;
+using System.Collections.Generic;
+
+namespace Oxide.Plugins
+{
+    [Info("Command Plugin", "YourName", "1.0.0")]
+    [Description("Plugin with chat commands")]
+    public class CommandPlugin : RustPlugin
+    {
+        #region Fields
+        private const string PERM_USE = "commandplugin.use";
+        private const string PERM_ADMIN = "commandplugin.admin";
+        private Configuration config;
+        #endregion
+
+        #region Configuration
+        private class Configuration
+        {
+            [JsonProperty("Chat Command")]
+            public string Command = "mycommand";
+            
+            [JsonProperty("Chat Prefix")]
+            public string Prefix = "<color=#00FF00>[MyPlugin]</color> ";
+        }
+
+        protected override void LoadDefaultConfig() => config = new Configuration();
+
+        protected override void LoadConfig()
+        {
+            base.LoadConfig();
+            try
+            {
+                config = Config.ReadObject<Configuration>();
+                if (config == null) throw new JsonException();
+            }
+            catch
+            {
+                LoadDefaultConfig();
+                SaveConfig();
+            }
+        }
+
+        protected override void SaveConfig() => Config.WriteObject(config, true);
+        #endregion
+
+        #region Localization
+        protected override void LoadDefaultMessages()
+        {
+            lang.RegisterMessages(new Dictionary<string, string>
+            {
+                ["NoPermission"] = "You don't have permission!",
+                ["Help"] = "Commands:\n/{0} help - Show this help\n/{0} info - Show info\n/{0} set <value> - Set a value",
+                ["Info"] = "Plugin version: {0}",
+                ["ValueSet"] = "Value set to: {0}",
+                ["InvalidArgs"] = "Invalid arguments. Use /{0} help"
+            }, this);
+        }
+
+        private string Lang(string key, string userId = null, params object[] args)
+            => string.Format(lang.GetMessage(key, this, userId), args);
+        #endregion
+
+        #region Oxide Hooks
+        private void Init()
+        {
+            permission.RegisterPermission(PERM_USE, this);
+            permission.RegisterPermission(PERM_ADMIN, this);
+            
+            // Register command from config
+            cmd.AddChatCommand(config.Command, this, nameof(CmdMain));
+        }
+        #endregion
+
+        #region Commands
+        private void CmdMain(BasePlayer player, string command, string[] args)
+        {
+            // CRITICAL: Always null check player
+            if (player == null || !player.IsConnected) return;
+            
+            // Permission check
+            if (!permission.UserHasPermission(player.UserIDString, PERM_USE))
+            {
+                SendReply(player, config.Prefix + Lang("NoPermission", player.UserIDString));
+                return;
+            }
+
+            // No args - show help
+            if (args.Length == 0)
+            {
+                SendReply(player, config.Prefix + Lang("Help", player.UserIDString, config.Command));
+                return;
+            }
+
+            // Parse subcommand
+            switch (args[0].ToLower())
+            {
+                case "help":
+                case "h":
+                    SendReply(player, config.Prefix + Lang("Help", player.UserIDString, config.Command));
+                    break;
+
+                case "info":
+                case "i":
+                    SendReply(player, config.Prefix + Lang("Info", player.UserIDString, Version));
+                    break;
+
+                case "set":
+                case "s":
+                    if (args.Length < 2)
+                    {
+                        SendReply(player, config.Prefix + Lang("InvalidArgs", player.UserIDString, config.Command));
+                        return;
+                    }
+                    
+                    // Admin only
+                    if (!permission.UserHasPermission(player.UserIDString, PERM_ADMIN))
+                    {
+                        SendReply(player, config.Prefix + Lang("NoPermission", player.UserIDString));
+                        return;
+                    }
+                    
+                    string value = args[1];
+                    SendReply(player, config.Prefix + Lang("ValueSet", player.UserIDString, value));
+                    break;
+
+                default:
+                    SendReply(player, config.Prefix + Lang("InvalidArgs", player.UserIDString, config.Command));
+                    break;
+            }
+        }
+        #endregion
+    }
+}
+```
+
+## EXAMPLE 6: Plugin with Player Finding
+
+```csharp
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Oxide.Plugins
+{
+    [Info("Player Finder Plugin", "YourName", "1.0.0")]
+    [Description("Shows how to find players")]
+    public class PlayerFinderPlugin : RustPlugin
+    {
+        // Find player by partial name or full Steam ID
+        private BasePlayer FindPlayer(string nameOrId, BasePlayer requester)
+        {
+            // Try exact Steam ID first
+            if (nameOrId.Length == 17)
+            {
+                var player = BasePlayer.activePlayerList.FirstOrDefault(x => x.UserIDString == nameOrId);
+                if (player != null) return player;
+            }
+
+            // Search by name (case insensitive, partial match)
+            var matches = BasePlayer.activePlayerList
+                .Where(x => x.displayName.ToLower().Contains(nameOrId.ToLower()))
+                .ToList();
+
+            if (matches.Count == 0)
+            {
+                SendReply(requester, $"No player found matching '{nameOrId}'");
+                return null;
+            }
+
+            if (matches.Count > 1)
+            {
+                var names = string.Join(", ", matches.Select(x => x.displayName).Take(5));
+                SendReply(requester, $"Multiple players found: {names}");
+                return null;
+            }
+
+            return matches[0];
+        }
+
+        [ChatCommand("find")]
+        private void CmdFind(BasePlayer player, string command, string[] args)
+        {
+            if (player == null || !player.IsConnected) return;
+            
+            if (args.Length == 0)
+            {
+                SendReply(player, "Usage: /find <name or steamid>");
+                return;
+            }
+
+            var target = FindPlayer(args[0], player);
+            if (target == null) return;  // Error already sent
+
+            SendReply(player, $"Found: {target.displayName} ({target.UserIDString})");
+        }
+    }
+}
+```
+
+## EXAMPLE 7: Complex Plugin with UI, Timers, Input Handling, Effects (MiningGun)
+
+This is a COMPLETE working plugin demonstrating advanced patterns: custom UI, heat/overheat system, auto-fire timers, player input handling, entity detection, visual effects, and AOE mechanics.
+
+```csharp
+using System;
+using System.Collections.Generic;
+using Newtonsoft.Json;
+using Oxide.Core;
+using Oxide.Core.Plugins;
+using Oxide.Game.Rust.Cui;
+using UnityEngine;
+
+namespace Oxide.Plugins
+{
+    [Info("MiningGun", "ZombiePVE", "1.0.0")]
+    [Description("Custom Mining Gun - Nailgun that shoots beam to mine nodes from distance")]
+    public class MiningGun : RustPlugin
+    {
+        #region Fields
+        private Configuration config;
+        private Dictionary<ulong, float> lastFireTime = new Dictionary<ulong, float>();
+        private HashSet<ulong> playersWithUI = new HashSet<ulong>();
+        
+        // Track hits per node - key is node NetworkID
+        private Dictionary<uint, NodeHitData> nodeHits = new Dictionary<uint, NodeHitData>();
+        
+        // Full-auto and overheat tracking
+        private Dictionary<ulong, PlayerHeatData> playerHeat = new Dictionary<ulong, PlayerHeatData>();
+        private Dictionary<ulong, Timer> autoFireTimers = new Dictionary<ulong, Timer>();
+        
+        private const string PERM_USE = "mininggun.use";
+        private const string PERM_ADMIN = "mininggun.admin";
+        private const string UI_PANEL = "MiningGunUI";
+        private const string HEAT_UI = "MiningGunHeat";
+        
+        private class NodeHitData
+        {
+            public int HitsTaken;
+            public int HitsNeeded;
+        }
+        
+        private class PlayerHeatData
+        {
+            public float Heat; // 0-100
+            public bool Overheated;
+            public float LastFireTime;
+            public float OverheatEndTime;
+        }
+        #endregion
+
+        #region Configuration
+        private class Configuration
+        {
+            [JsonProperty("Mining Gun Settings")]
+            public MiningGunSettings Gun { get; set; } = new MiningGunSettings();
+        }
+        
+        private class MiningGunSettings
+        {
+            [JsonProperty("Mining range (meters)")]
+            public float Range { get; set; } = 20f;
+            
+            [JsonProperty("AOE radius (meters)")]
+            public float AOERadius { get; set; } = 10f;
+            
+            [JsonProperty("Fire cooldown (seconds)")]
+            public float Cooldown { get; set; } = 0.2f;
+            
+            [JsonProperty("Minimum hits to break node")]
+            public int MinHitsToBreak { get; set; } = 1;
+            
+            [JsonProperty("Maximum hits to break node")]
+            public int MaxHitsToBreak { get; set; } = 6;
+            
+            [JsonProperty("Custom item name for Mining Gun")]
+            public string ItemName { get; set; } = "Mining Laser";
+            
+            [JsonProperty("Custom item skin ID (0 for default)")]
+            public ulong SkinID { get; set; } = 0;
+            
+            [JsonProperty("Require special nailgun (by name/skin) or any nailgun")]
+            public bool RequireSpecialNailgun { get; set; } = true;
+            
+            [JsonProperty("Fire rate (shots per second)")]
+            public float FireRate { get; set; } = 3f;
+            
+            [JsonProperty("Heat per shot")]
+            public float HeatPerShot { get; set; } = 5f;
+            
+            [JsonProperty("Heat cooldown per second")]
+            public float HeatCooldownRate { get; set; } = 4f;
+            
+            [JsonProperty("Overheat threshold (0-100)")]
+            public float OverheatThreshold { get; set; } = 100f;
+            
+            [JsonProperty("Overheat cooldown time (seconds)")]
+            public float OverheatCooldown { get; set; } = 15f;
+            
+            [JsonProperty("Beam effect prefab")]
+            public string BeamEffectPrefab { get; set; } = "assets/bundled/prefabs/fx/impacts/additive/fire.prefab";
+            
+            [JsonProperty("Impact effect prefab")]
+            public string ImpactEffectPrefab { get; set; } = "assets/bundled/prefabs/fx/survey_explosion.prefab";
+            
+            [JsonProperty("Rock hit sound prefab")]
+            public string RockHitSoundPrefab { get; set; } = "assets/bundled/prefabs/fx/impacts/stab/rock/stab_rock_01.prefab";
+            
+            [JsonProperty("Rock break sound prefab")]
+            public string RockBreakSoundPrefab { get; set; } = "assets/bundled/prefabs/fx/ore_break.prefab";
+        }
+
+        protected override void LoadDefaultConfig()
+        {
+            config = new Configuration();
+            SaveConfig();
+        }
+
+        protected override void LoadConfig()
+        {
+            base.LoadConfig();
+            try
+            {
+                config = Config.ReadObject<Configuration>();
+                if (config == null) LoadDefaultConfig();
+            }
+            catch
+            {
+                LoadDefaultConfig();
+            }
+        }
+
+        protected override void SaveConfig() => Config.WriteObject(config);
+        #endregion
+
+        #region Oxide Hooks
+        private void OnServerInitialized()
+        {
+            permission.RegisterPermission(PERM_USE, this);
+            permission.RegisterPermission(PERM_ADMIN, this);
+            
+            foreach (var player in BasePlayer.activePlayerList)
+                CheckAndShowUI(player);
+        }
+        
+        private void Unload()
+        {
+            nodeHits.Clear();
+            
+            // CRITICAL: Stop all auto-fire timers
+            foreach (var t in autoFireTimers.Values)
+                t?.Destroy();
+            autoFireTimers.Clear();
+            
+            // CRITICAL: Remove UI from all players
+            foreach (var player in BasePlayer.activePlayerList)
+            {
+                CuiHelper.DestroyUi(player, UI_PANEL);
+                CuiHelper.DestroyUi(player, HEAT_UI);
+            }
+            playersWithUI.Clear();
+            playerHeat.Clear();
+        }
+        
+        private void OnPlayerDisconnected(BasePlayer player)
+        {
+            if (player != null)
+            {
+                playersWithUI.Remove(player.userID);
+                lastFireTime.Remove(player.userID);
+                playerHeat.Remove(player.userID);
+                
+                if (autoFireTimers.TryGetValue(player.userID, out Timer t))
+                {
+                    t?.Destroy();
+                    autoFireTimers.Remove(player.userID);
+                }
+            }
+        }
+        
+        private void OnActiveItemChanged(BasePlayer player, Item oldItem, Item newItem)
+        {
+            if (player == null) return;
+            NextTick(() => CheckAndShowUI(player));
+        }
+        
+        private void CheckAndShowUI(BasePlayer player)
+        {
+            if (player == null) return;
+            
+            var heldItem = player.GetActiveItem();
+            bool shouldShowUI = false;
+            
+            if (heldItem != null && heldItem.info.shortname == "pistol.nailgun")
+            {
+                if (config.Gun.RequireSpecialNailgun)
+                {
+                    if (!string.IsNullOrEmpty(heldItem.name) && heldItem.name.Contains(config.Gun.ItemName))
+                        shouldShowUI = true;
+                    if (config.Gun.SkinID > 0 && heldItem.skin == config.Gun.SkinID)
+                        shouldShowUI = true;
+                }
+                else
+                {
+                    shouldShowUI = true;
+                }
+            }
+            
+            if (shouldShowUI && !playersWithUI.Contains(player.userID))
+            {
+                ShowMiningGunUI(player);
+                playersWithUI.Add(player.userID);
+            }
+            else if (!shouldShowUI && playersWithUI.Contains(player.userID))
+            {
+                CuiHelper.DestroyUi(player, UI_PANEL);
+                playersWithUI.Remove(player.userID);
+            }
+        }
+        
+        // IMPORTANT: OnPlayerInput for detecting held fire button
+        private void OnPlayerInput(BasePlayer player, InputState input)
+        {
+            if (player == null || input == null) return;
+            
+            var heldItem = player.GetActiveItem();
+            if (heldItem == null || heldItem.info.shortname != "pistol.nailgun") return;
+            
+            if (config.Gun.RequireSpecialNailgun)
+            {
+                bool isMiningGun = false;
+                if (!string.IsNullOrEmpty(heldItem.name) && heldItem.name.Contains(config.Gun.ItemName))
+                    isMiningGun = true;
+                if (config.Gun.SkinID > 0 && heldItem.skin == config.Gun.SkinID)
+                    isMiningGun = true;
+                if (!isMiningGun) return;
+            }
+            
+            if (!permission.UserHasPermission(player.UserIDString, PERM_USE) && !player.IsAdmin)
+                return;
+            
+            // Handle fire button press - start auto fire
+            if (input.WasJustPressed(BUTTON.FIRE_PRIMARY))
+                StartAutoFire(player);
+            else if (input.WasJustReleased(BUTTON.FIRE_PRIMARY))
+                StopAutoFire(player);
+        }
+        
+        private void StartAutoFire(BasePlayer player)
+        {
+            if (autoFireTimers.ContainsKey(player.userID)) return;
+            
+            if (!playerHeat.TryGetValue(player.userID, out PlayerHeatData heatData))
+            {
+                heatData = new PlayerHeatData { Heat = 0, Overheated = false };
+                playerHeat[player.userID] = heatData;
+            }
+            
+            if (heatData.Overheated)
+            {
+                SendReply(player, "<color=#ff4444>[!] OVERHEATED - Wait for cooldown!</color>");
+                return;
+            }
+            
+            TryFireShot(player);
+            
+            float fireInterval = 1f / config.Gun.FireRate;
+            autoFireTimers[player.userID] = timer.Every(fireInterval, () =>
+            {
+                if (player == null || !player.IsConnected)
+                {
+                    StopAutoFire(player);
+                    return;
+                }
+                
+                var item = player.GetActiveItem();
+                if (item == null || item.info.shortname != "pistol.nailgun")
+                {
+                    StopAutoFire(player);
+                    return;
+                }
+                
+                TryFireShot(player);
+            });
+        }
+        
+        private void StopAutoFire(BasePlayer player)
+        {
+            if (player == null) return;
+            
+            if (autoFireTimers.TryGetValue(player.userID, out Timer t))
+            {
+                t?.Destroy();
+                autoFireTimers.Remove(player.userID);
+            }
+            
+            StartCooldown(player);
+        }
+        
+        private void TryFireShot(BasePlayer player)
+        {
+            if (!playerHeat.TryGetValue(player.userID, out PlayerHeatData heatData))
+            {
+                heatData = new PlayerHeatData { Heat = 0, Overheated = false };
+                playerHeat[player.userID] = heatData;
+            }
+            
+            if (heatData.Overheated)
+            {
+                StopAutoFire(player);
+                return;
+            }
+            
+            FireMiningLaser(player);
+            
+            heatData.Heat += config.Gun.HeatPerShot;
+            heatData.LastFireTime = Time.realtimeSinceStartup;
+            
+            if (heatData.Heat >= config.Gun.OverheatThreshold)
+            {
+                heatData.Heat = config.Gun.OverheatThreshold;
+                heatData.Overheated = true;
+                heatData.OverheatEndTime = Time.realtimeSinceStartup + config.Gun.OverheatCooldown;
+                StopAutoFire(player);
+                SendReply(player, "<color=#ff4444>[!] OVERHEATED!</color>");
+                
+                StartOverheatCountdown(player);
+                
+                timer.Once(config.Gun.OverheatCooldown, () =>
+                {
+                    if (playerHeat.TryGetValue(player.userID, out PlayerHeatData data))
+                    {
+                        data.Overheated = false;
+                        data.Heat = 0;
+                        UpdateHeatUI(player);
+                        if (player != null && player.IsConnected)
+                            SendReply(player, "<color=#44ff44>[OK] Cooled down - Ready to fire!</color>");
+                    }
+                });
+            }
+            
+            UpdateHeatUI(player);
+        }
+        
+        private void StartCooldown(BasePlayer player)
+        {
+            if (player == null) return;
+            
+            timer.Every(0.1f, () =>
+            {
+                if (player == null || !player.IsConnected) return;
+                if (autoFireTimers.ContainsKey(player.userID)) return;
+                
+                if (!playerHeat.TryGetValue(player.userID, out PlayerHeatData heatData)) return;
+                if (heatData.Overheated) return;
+                
+                heatData.Heat -= config.Gun.HeatCooldownRate * 0.1f;
+                if (heatData.Heat <= 0)
+                {
+                    heatData.Heat = 0;
+                    CuiHelper.DestroyUi(player, HEAT_UI);
+                    return;
+                }
+                
+                UpdateHeatUI(player);
+            });
+        }
+        
+        private void StartOverheatCountdown(BasePlayer player)
+        {
+            timer.Every(0.5f, () =>
+            {
+                if (player == null || !player.IsConnected) return;
+                if (!playerHeat.TryGetValue(player.userID, out PlayerHeatData heatData)) return;
+                if (!heatData.Overheated) return;
+                
+                UpdateHeatUI(player);
+            });
+        }
+        #endregion
+
+        #region Mining Laser
+        private bool HasNodeInSight(BasePlayer player, out Vector3 hitPoint, out List<OreResourceEntity> nodesInRange)
+        {
+            hitPoint = Vector3.zero;
+            nodesInRange = new List<OreResourceEntity>();
+            
+            Vector3 startPos = player.eyes.position;
+            Vector3 direction = player.eyes.HeadForward();
+            
+            RaycastHit hit;
+            Vector3 endPos;
+            
+            if (Physics.Raycast(startPos, direction, out hit, config.Gun.Range))
+            {
+                endPos = hit.point;
+                
+                var directHitNode = hit.GetEntity() as OreResourceEntity;
+                if (directHitNode != null && !directHitNode.IsDestroyed)
+                {
+                    hitPoint = endPos;
+                    nodesInRange.Add(directHitNode);
+                    
+                    var nearby = new List<OreResourceEntity>();
+                    Vis.Entities(endPos, config.Gun.AOERadius, nearby);
+                    foreach (var ore in nearby)
+                    {
+                        if (ore != null && !ore.IsDestroyed && ore != directHitNode)
+                            nodesInRange.Add(ore);
+                    }
+                    return true;
+                }
+            }
+            else
+            {
+                endPos = startPos + direction * config.Gun.Range;
+            }
+            
+            Vis.Entities(endPos, config.Gun.AOERadius, nodesInRange);
+            nodesInRange.RemoveAll(x => x == null || x.IsDestroyed);
+            
+            if (nodesInRange.Count > 0)
+            {
+                hitPoint = endPos;
+                return true;
+            }
+            
+            return false;
+        }
+        
+        private void FireMiningLaser(BasePlayer player)
+        {
+            Vector3 startPos = player.eyes.position;
+            
+            if (!HasNodeInSight(player, out Vector3 hitPoint, out List<OreResourceEntity> nodes))
+                return;
+            
+            ShowBeamEffect(player, startPos, hitPoint);
+            
+            foreach (var ore in nodes)
+            {
+                if (ore != null && !ore.IsDestroyed)
+                    DamageNode(player, ore);
+            }
+        }
+        
+        private void ShowBeamEffect(BasePlayer player, Vector3 start, Vector3 end)
+        {
+            float distance = Vector3.Distance(start, end);
+            int segments = Mathf.Max(8, (int)(distance / 1.5f));
+            
+            for (int i = 1; i <= segments; i++)
+            {
+                float t = (float)i / segments;
+                Vector3 pos = Vector3.Lerp(start, end, t);
+                Effect.server.Run(config.Gun.BeamEffectPrefab, pos);
+            }
+            
+            Effect.server.Run(config.Gun.ImpactEffectPrefab, end);
+        }
+        
+        private void DamageNode(BasePlayer player, OreResourceEntity ore)
+        {
+            if (ore == null || ore.IsDestroyed) return;
+            
+            uint nodeId = (uint)ore.net.ID.Value;
+            
+            if (!nodeHits.TryGetValue(nodeId, out NodeHitData hitData))
+            {
+                hitData = new NodeHitData
+                {
+                    HitsTaken = 0,
+                    HitsNeeded = UnityEngine.Random.Range(config.Gun.MinHitsToBreak, config.Gun.MaxHitsToBreak + 1)
+                };
+                nodeHits[nodeId] = hitData;
+            }
+            
+            hitData.HitsTaken++;
+            
+            Effect.server.Run(config.Gun.RockHitSoundPrefab, ore.transform.position);
+            Effect.server.Run("assets/bundled/prefabs/fx/survey_explosion.prefab", ore.transform.position);
+            
+            if (hitData.HitsTaken >= hitData.HitsNeeded)
+            {
+                Effect.server.Run(config.Gun.RockBreakSoundPrefab, ore.transform.position);
+                GatherFromNode(player, ore);
+                nodeHits.Remove(nodeId);
+                ore.Kill();
+            }
+        }
+        
+        private void GatherFromNode(BasePlayer player, OreResourceEntity ore)
+        {
+            if (ore == null || player == null) return;
+            
+            var dispenser = ore.GetComponent<ResourceDispenser>();
+            if (dispenser == null) return;
+            
+            foreach (var item in dispenser.containedItems)
+            {
+                if (item.amount <= 0) continue;
+                
+                var giveItem = ItemManager.CreateByName(item.itemDef.shortname, (int)item.amount);
+                if (giveItem != null)
+                    player.GiveItem(giveItem);
+            }
+        }
+        #endregion
+
+        #region UI
+        private void ShowMiningGunUI(BasePlayer player)
+        {
+            CuiHelper.DestroyUi(player, UI_PANEL);
+            
+            var elements = new CuiElementContainer();
+            
+            elements.Add(new CuiPanel
+            {
+                Image = { Color = "0.1 0.1 0.12 0.85" },
+                RectTransform = { AnchorMin = "0.01 0.11", AnchorMax = "0.18 0.14" },
+                CursorEnabled = false
+            }, "Hud", UI_PANEL);
+            
+            elements.Add(new CuiPanel
+            {
+                Image = { Color = "0.2 0.8 1 0.9" },
+                RectTransform = { AnchorMin = "0 0", AnchorMax = "0.015 1" }
+            }, UI_PANEL);
+            
+            elements.Add(new CuiLabel
+            {
+                Text = { Text = $"[>] MINING LASER | {config.Gun.Range}m | AOE {config.Gun.AOERadius}m", FontSize = 10, Align = TextAnchor.MiddleLeft, Color = "0.2 0.8 1 1" },
+                RectTransform = { AnchorMin = "0.03 0", AnchorMax = "0.98 1" }
+            }, UI_PANEL);
+            
+            CuiHelper.AddUi(player, elements);
+        }
+        
+        private void UpdateHeatUI(BasePlayer player)
+        {
+            if (player == null) return;
+            
+            CuiHelper.DestroyUi(player, HEAT_UI);
+            
+            if (!playerHeat.TryGetValue(player.userID, out PlayerHeatData heatData)) return;
+            if (heatData.Heat <= 0) return;
+            
+            var elements = new CuiElementContainer();
+            
+            float heatPercent = heatData.Heat / config.Gun.OverheatThreshold;
+            string barColor = heatData.Overheated ? "1 0.2 0.2 0.9" : 
+                              heatPercent > 0.7f ? "1 0.5 0.1 0.9" : 
+                              heatPercent > 0.4f ? "1 0.8 0.2 0.9" : "0.2 0.8 1 0.9";
+            
+            elements.Add(new CuiPanel
+            {
+                Image = { Color = "0.1 0.1 0.12 0.85" },
+                RectTransform = { AnchorMin = "0.01 0.145", AnchorMax = "0.18 0.17" },
+                CursorEnabled = false
+            }, "Hud", HEAT_UI);
+            
+            float barWidth = 0.02f + (0.96f * heatPercent);
+            elements.Add(new CuiPanel
+            {
+                Image = { Color = barColor },
+                RectTransform = { AnchorMin = "0.02 0.15", AnchorMax = $"{barWidth:F3} 0.85" }
+            }, HEAT_UI);
+            
+            string heatText;
+            if (heatData.Overheated)
+            {
+                float timeLeft = heatData.OverheatEndTime - Time.realtimeSinceStartup;
+                if (timeLeft < 0) timeLeft = 0;
+                heatText = $"OVERHEATED! {timeLeft:F1}s";
+            }
+            else
+            {
+                heatText = $"HEAT: {(heatPercent * 100):F0}%";
+            }
+            
+            elements.Add(new CuiLabel
+            {
+                Text = { Text = heatText, FontSize = 9, Align = TextAnchor.MiddleCenter, Color = "1 1 1 1" },
+                RectTransform = { AnchorMin = "0 0", AnchorMax = "1 1" }
+            }, HEAT_UI);
+            
+            CuiHelper.AddUi(player, elements);
+        }
+        #endregion
+
+        #region Commands
+        [ChatCommand("mininggun")]
+        private void CmdMiningGun(BasePlayer player, string command, string[] args)
+        {
+            if (!player.IsAdmin && !permission.UserHasPermission(player.UserIDString, PERM_ADMIN))
+            {
+                SendReply(player, "<color=#ff4444>Admin only.</color>");
+                return;
+            }
+            
+            if (args.Length == 0)
+            {
+                SendReply(player,
+                    "<color=#ff8800>=== MINING GUN ===</color>\n" +
+                    $"Range: {config.Gun.Range}m\n" +
+                    $"AOE Radius: {config.Gun.AOERadius}m\n" +
+                    $"Hits to break: {config.Gun.MinHitsToBreak}-{config.Gun.MaxHitsToBreak}\n\n" +
+                    "<color=#888888>/mininggun give</color> - Give yourself a Mining Gun\n" +
+                    "<color=#888888>/mininggun give <player></color> - Give to player");
+                return;
+            }
+            
+            if (args[0].ToLower() == "give")
+            {
+                BasePlayer target = player;
+                
+                if (args.Length > 1)
+                {
+                    target = BasePlayer.Find(args[1]);
+                    if (target == null)
+                    {
+                        SendReply(player, $"<color=#ff4444>Player '{args[1]}' not found.</color>");
+                        return;
+                    }
+                }
+                
+                GiveMiningGun(target);
+                SendReply(player, $"<color=#ff8800>Mining Gun given to {target.displayName}!</color>");
+            }
+        }
+        
+        private void GiveMiningGun(BasePlayer player)
+        {
+            var item = ItemManager.CreateByName("pistol.nailgun", 1, config.Gun.SkinID);
+            if (item == null) return;
+            
+            item.name = config.Gun.ItemName;
+            item.text = $"[MINING LASER]\n" +
+                       $"Range: {config.Gun.Range}m\n" +
+                       $"AOE: {config.Gun.AOERadius}m radius\n" +
+                       $"Hits to break: {config.Gun.MinHitsToBreak}-{config.Gun.MaxHitsToBreak}\n" +
+                       $"No ammo required!";
+            
+            var weapon = item.GetHeldEntity() as BaseProjectile;
+            if (weapon != null)
+            {
+                weapon.primaryMagazine.contents = 0;
+                weapon.primaryMagazine.capacity = 0;
+            }
+            
+            player.GiveItem(item);
+            
+            SendReply(player, 
+                $"<color=#ff8800>You received a {config.Gun.ItemName}!</color>\n" +
+                "<color=#aaaaaa>Shoot nodes from distance - breaks in 1-6 hits!</color>\n" +
+                $"<color=#666666>Range: {config.Gun.Range}m | AOE: {config.Gun.AOERadius}m</color>");
+        }
+        #endregion
+    }
+}
+```
+
+**KEY PATTERNS FROM THIS EXAMPLE:**
+
+1. **OnPlayerInput hook** - Detect when player presses/releases fire button
+2. **Auto-fire with timer.Every** - Continuous firing while button held
+3. **Heat/Overheat system** - Track state per player with Dictionary
+4. **Multiple UI panels** - Main UI + dynamic heat bar
+5. **Entity detection with Vis.Entities** - Find nodes in AOE radius
+6. **Raycast from player eyes** - `player.eyes.position` and `player.eyes.HeadForward()`
+7. **Effect.server.Run** - Play effects at positions
+8. **NextTick for UI updates** - Safe UI refresh after item changes
+9. **Proper cleanup in Unload** - Destroy ALL timers and UI
+10. **Player disconnect cleanup** - Remove from all tracking dictionaries
+
+---
+
+## EXAMPLE 8: MonoBehaviour Component, Player Input, ProtoStorage (ChestStacks)
+
+This plugin demonstrates: FacepunchBehaviour components attached to players, detecting right-click input, binary data storage with ProtoStorage, entity flags, raycasting, and proper component cleanup.
+
+```csharp
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Linq;
+using Facepunch;
+using Newtonsoft.Json;
+using Oxide.Core;
+using ProtoBuf;
+using Rust;
+using UnityEngine;
+
+namespace Oxide.Plugins
+{
+    [Info("Chest Stacks", "supreme", "1.4.2")]
+    [Description("Allows players to stack chests")]
+    public class ChestStacks : RustPlugin
+    {
+        #region Fields
+        private static ChestStacks _pluginInstance;
+        private PluginConfig _pluginConfig;
+        private PluginData _pluginData;
+        
+        private readonly Hash<ulong, ChestStacking> _cachedComponents = new();
+        
+        private const string UsePermission = "cheststacks.use";
+        private const string LargeBoxPrefab = "assets/prefabs/deployable/large wood storage/box.wooden.large.prefab";
+        private const string SmallBoxPrefab = "assets/prefabs/deployable/woodenbox/woodbox_deployed.prefab";
+        private const int BoxLayer = Layers.Mask.Deployed;
+        
+        private const BaseEntity.Flags StackedFlag = BaseEntity.Flags.Reserved1;
+        #endregion
+
+        #region Hooks
+        private void Init()
+        {
+            _pluginInstance = this;
+            LoadData();
+            permission.RegisterPermission(UsePermission, this);
+        }
+
+        private void OnServerInitialized()
+        {
+            foreach (BasePlayer player in BasePlayer.activePlayerList)
+                OnPlayerConnected(player);
+        }
+
+        private void Unload()
+        {
+            // CRITICAL: Clean up all components
+            List<ChestStacking> components = Pool.Get<List<ChestStacking>>();
+            components.AddRange(_cachedComponents.Values);
+            
+            for (int i = 0; i < components.Count; i++)
+                components[i].Destroy();
+
+            SaveData();
+            _pluginInstance = null;
+            Pool.FreeUnmanaged(ref components);
+        }
+
+        private void OnNewSave() => _pluginData.StoredBoxes.Clear();
+
+        private void OnPlayerConnected(BasePlayer player)
+        {
+            if (_cachedComponents[player.userID]) return;
+            player.gameObject.AddComponent<ChestStacking>();
+        }
+        
+        private void OnPlayerDisconnected(BasePlayer player)
+        {
+            ChestStacking component = _cachedComponents[player.userID];
+            if (component) component.Destroy();
+        }
+        
+        private void OnEntityKill(BoxStorage box)
+        {
+            if (!box || !IsStacked(box)) return;
+            _pluginData.StoredBoxes.Remove(box.net.ID.Value);
+        }
+
+        private object OnEntityGroundMissing(BoxStorage box)
+        {
+            if (!box || !IsStacked(box)) return null;
+            
+            // Check if there's still a box below
+            if (Physics.Raycast(box.transform.position, Vector3.down, 0.5f, BoxLayer))
+                return true; // Block ground check - box is stacked
+            
+            return null; // Allow normal ground check
+        }
+        #endregion
+
+        #region Helper Methods
+        private bool IsStacked(BoxStorage box) => box.HasFlag(StackedFlag);
+        
+        private bool HasPermission(BasePlayer player, string perm) =>
+            permission.UserHasPermission(player.UserIDString, perm);
+        #endregion
+
+        #region Chest Stacking Component
+        public class ChestStacking : FacepunchBehaviour
+        {
+            private BasePlayer Player { get; set; }
+            private float NextTime { get; set; }
+            
+            private void Awake()
+            {
+                Player = GetComponent<BasePlayer>();
+                _pluginInstance._cachedComponents[Player.userID] = this;
+            }
+
+            private void Update()
+            {
+                if (!Player || !_pluginInstance.HasPermission(Player, UsePermission))
+                    return;
+
+                // Detect right-click
+                if (!Player.serverInput.WasJustPressed(BUTTON.FIRE_SECONDARY))
+                    return;
+                
+                // Cooldown check
+                if (NextTime > Time.time) return;
+                NextTime = Time.time + 0.5f;
+                
+                // Check if holding a box
+                Item activeItem = Player.GetActiveItem();
+                if (activeItem == null || activeItem.info.shortname != "box.wooden.large")
+                    return;
+                
+                // Raycast to find box player is looking at
+                BoxStorage box = GetLookingAtBox();
+                if (!box) return;
+                
+                // Stack the chest
+                StackChest(box, activeItem);
+            }
+            
+            private BoxStorage GetLookingAtBox()
+            {
+                if (!Physics.Raycast(Player.eyes.HeadRay(), out RaycastHit hit, 3f, BoxLayer))
+                    return null;
+                return hit.GetEntity() as BoxStorage;
+            }
+            
+            private void StackChest(BoxStorage existingBox, Item activeItem)
+            {
+                Vector3 newPos = existingBox.transform.position + new Vector3(0f, 0.8f, 0f);
+                Quaternion rotation = existingBox.transform.rotation;
+                
+                BoxStorage newBox = (BoxStorage)GameManager.server.CreateEntity(
+                    LargeBoxPrefab, newPos, rotation);
+                
+                if (!newBox) return;
+                
+                newBox.Spawn();
+                newBox.OwnerID = Player.userID;
+                newBox.skinID = activeItem.skin;
+                newBox.SetFlag(StackedFlag, true);
+                newBox.SendNetworkUpdateImmediate();
+                
+                // Track in data
+                _pluginInstance._pluginData.StoredBoxes[newBox.net.ID.Value] = new BoxData
+                {
+                    BottomBoxId = existingBox.net.ID.Value
+                };
+                
+                activeItem.UseItem();
+                _pluginInstance.SaveData();
+                
+                Player.ChatMessage("Chest stacked!");
+            }
+
+            public void Destroy()
+            {
+                _pluginInstance._cachedComponents.Remove(Player.userID);
+                DestroyImmediate(this);
+            }
+        }
+        #endregion
+
+        #region Configuration
+        private class PluginConfig
+        {
+            [DefaultValue(true)]
+            [JsonProperty("Building privilege required")]
+            public bool BuildingPrivilegeRequired { get; set; }
+            
+            [JsonProperty("Max stack height")]
+            public int MaxStackHeight { get; set; } = 5;
+        }
+
+        protected override void LoadDefaultConfig() => PrintWarning("Loading Default Config");
+
+        protected override void LoadConfig()
+        {
+            base.LoadConfig();
+            Config.Settings.DefaultValueHandling = DefaultValueHandling.Populate;
+            _pluginConfig = Config.ReadObject<PluginConfig>();
+            Config.WriteObject(_pluginConfig);
+        }
+        #endregion
+        
+        #region Data Storage (ProtoStorage - Binary)
+        private void SaveData()
+        {
+            if (_pluginData == null) return;
+            ProtoStorage.Save(_pluginData, Name);
+        }
+
+        private void LoadData()
+        {
+            _pluginData = ProtoStorage.Load<PluginData>(Name) ?? new PluginData();
+        }
+
+        [ProtoContract]
+        private class PluginData
+        {
+            [ProtoMember(1)]
+            public Hash<ulong, BoxData> StoredBoxes { get; set; } = new();
+        }
+
+        [ProtoContract]
+        private class BoxData
+        {
+            [ProtoMember(1)]
+            public ulong BottomBoxId { get; set; }
+        }
+        #endregion
+        
+        #region Language
+        protected override void LoadDefaultMessages()
+        {
+            lang.RegisterMessages(new Dictionary<string, string>
+            {
+                ["MaxStack"] = "Maximum stack height reached!",
+                ["NoPermission"] = "You don't have permission!"
+            }, this);
+        }
+        #endregion
+    }
+}
+```
+
+**KEY PATTERNS FROM THIS EXAMPLE:**
+
+1. **FacepunchBehaviour component** - Attach custom behavior to players
+2. **Update() loop** - Runs every frame (use sparingly for performance)
+3. **BUTTON.FIRE_SECONDARY** - Detect right-click input
+4. **ProtoStorage** - Binary data storage (faster than JSON)
+5. **[ProtoContract] / [ProtoMember]** - Required attributes for ProtoStorage
+6. **BaseEntity.Flags.Reserved1** - Custom flag to mark entities
+7. **Raycast to find entity** - `Physics.Raycast` with `hit.GetEntity()`
+8. **GameManager.server.CreateEntity** - Spawn entities programmatically
+9. **Component cleanup in Unload** - Destroy all attached components
+10. **Pool.Get / Pool.FreeUnmanaged** - Memory pooling for lists
+
+---
+
+## COMMON ERRORS AND FIXES
+
+```csharp
+// ERROR: CS0103 - 'userId' does not exist
+// FIX: Check variable name spelling - is it 'userId' or 'userID' or 'playerId'?
+private PlayerData GetPlayerData(ulong userId)  // Parameter name must match usage
+
+// ERROR: CS1061 - 'BasePlayer' does not contain 'userID'
+// FIX: It's 'userID' (lowercase 'u', uppercase 'ID')
+player.userID  // CORRECT
+player.userId  // WRONG
+player.UserID  // WRONG
+
+// ERROR: CS0029 - Cannot convert 'ulong' to 'string'
+// FIX: Use UserIDString for permissions
+permission.UserHasPermission(player.UserIDString, PERM);  // CORRECT
+permission.UserHasPermission(player.userID, PERM);  // WRONG - userID is ulong
+
+// ERROR: NullReferenceException at runtime
+// FIX: Add null checks
+if (player == null) return;
+if (entity == null || entity.IsDestroyed) return;
+if (player?.net?.connection == null) return;
+
+// ERROR: Config not saving/loading properly
+// FIX: Make sure class has [JsonProperty] and proper structure
+private class Configuration
+{
+    [JsonProperty("My Setting")]  // REQUIRED for proper serialization
+    public bool MySetting = true;
+}
+
+// ERROR: Timer keeps running after unload
+// FIX: Destroy timers in Unload()
+private Timer myTimer;
+private void Unload()
+{
+    myTimer?.Destroy();
+}
+
+// ERROR: Collection modified during enumeration
+// FIX: Use .ToList() when iterating and modifying
+foreach (var player in BasePlayer.activePlayerList.ToList())
+{
+    // Safe to modify activePlayerList here
+}
+```
