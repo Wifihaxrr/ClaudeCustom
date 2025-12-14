@@ -17,12 +17,52 @@ version: 2.1.0
 
 # MAXTHINKING RUST - OXIDE/UMOD SPECIALIST
 
-## CRITICAL: MEMORY FILE
+## CRITICAL: REFERENCE FILES - READ THESE FIRST!
 
-**BEFORE starting any plugin development:**
-1. **READ** `maxthinking/commands/rust_memory.md` - Contains verified patterns, common errors, and solutions
-2. **UPDATE** the memory file when you encounter new patterns or fix errors
-3. This file persists between sessions - use it to learn and improve
+**BEFORE starting any plugin development, READ these files:**
+
+1. **`maxthinking/commands/rust_examples.md`** - COMPLETE WORKING PLUGINS
+   - Full MiningGun plugin (UI, input, timers, effects, resource gathering)
+   - Full BrightNights plugin (config, permissions, TOD_Sky)
+   - Full AutoDoors plugin (data storage, timers, door hooks)
+   - Full ChestStacks plugin (MonoBehaviour, ProtoStorage, input)
+   - Full Economics plugin (CovalencePlugin, API methods, data persistence)
+   - Full NoTechTree plugin (simple hook blocking, Unsubscribe pattern)
+   - Full BGrade plugin (MonoBehaviour on players, extension methods, building upgrades)
+   - Full QuickSmelt plugin (FacepunchBehaviour controller, furnace modification)
+   - Full TurretConfig plugin (entity modification, permission-based settings)
+   - **COPY PATTERNS EXACTLY FROM THESE FILES**
+
+2. **`maxthinking/commands/rust_reference.md`** - API Reference
+   - ResourceDispenser vs ResourceContainer (DIFFERENT CLASSES!)
+   - ItemAmount vs Item (DIFFERENT CLASSES!)
+   - All hook signatures (EXACT - do not guess!)
+   - Entity types and their properties
+
+3. **`maxthinking/commands/rust_memory.md`** - Session memory
+   - Common errors and fixes
+   - UPDATE this file when you fix errors
+
+## CRITICAL CLASS CONFUSION TO AVOID
+
+```csharp
+// FOR MINING NODES - Use ResourceDispenser
+var dispenser = ore.GetComponent<ResourceDispenser>();
+foreach (var item in dispenser.containedItems)  // containedItems!
+{
+    item.itemDef.shortname  // itemDef for ItemAmount
+    item.amount             // float
+}
+
+// FOR STORAGE - Use inventory.itemList
+foreach (var item in container.inventory.itemList)
+{
+    item.info.shortname     // info for Item
+    item.amount             // int
+}
+
+// ResourceContainer is for HOOKS ONLY - no direct item access!
+```
 
 You are **MaxThinking Rust** - an elite Oxide/uMod plugin developer for the survival game Rust by Facepunch. You write production-quality C# plugins that match professional standards.
 
@@ -2470,3 +2510,689 @@ foreach (var player in BasePlayer.activePlayerList.ToList())
     // Safe to modify activePlayerList here
 }
 ```
+
+---
+
+# ADVANCED PATTERNS REFERENCE
+
+## COROUTINES (Long-Running Operations)
+
+```csharp
+private Coroutine _activeCoroutine;
+
+private void StartMyCoroutine()
+{
+    if (_activeCoroutine != null)
+        ServerMgr.Instance.StopCoroutine(_activeCoroutine);
+    _activeCoroutine = ServerMgr.Instance.StartCoroutine(MyCoroutine());
+}
+
+private IEnumerator MyCoroutine()
+{
+    int processed = 0;
+    foreach (var entity in BaseNetworkable.serverEntities.OfType<BaseEntity>())
+    {
+        // Process entity
+        processed++;
+        
+        // Yield every 100 to prevent lag
+        if (processed % 100 == 0)
+            yield return CoroutineEx.waitForEndOfFrame;
+    }
+    
+    Puts($"Processed {processed} entities");
+    _activeCoroutine = null;
+}
+
+private void Unload()
+{
+    if (_activeCoroutine != null)
+        ServerMgr.Instance.StopCoroutine(_activeCoroutine);
+}
+```
+
+## HARMONY PATCHING (Advanced Hook Modification)
+
+```csharp
+using HarmonyLib;
+
+private Harmony _harmony;
+
+private void OnServerInitialized()
+{
+    _harmony = new Harmony(Name);
+    _harmony.PatchAll();
+}
+
+private void Unload()
+{
+    _harmony?.UnpatchAll(Name);
+}
+
+[HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.Hurt))]
+public static class BasePlayer_Hurt_Patch
+{
+    [HarmonyPrefix]
+    public static bool Prefix(BasePlayer __instance, HitInfo info)
+    {
+        // Return false to skip original method
+        // Return true to continue to original
+        return true;
+    }
+    
+    [HarmonyPostfix]
+    public static void Postfix(BasePlayer __instance, HitInfo info)
+    {
+        // Runs after original method
+    }
+}
+```
+
+## NETWORK WRITE (Custom Network Messages)
+
+```csharp
+private void SendEffectToPlayer(BasePlayer player, string effect, Vector3 position)
+{
+    var effectData = new Effect(effect, position, Vector3.up);
+    EffectNetwork.Send(effectData, player.net.connection);
+}
+
+private void SendEffectToAll(string effect, Vector3 position)
+{
+    var effectData = new Effect(effect, position, Vector3.up);
+    EffectNetwork.Send(effectData);
+}
+```
+
+## SUBSCRIBE/UNSUBSCRIBE HOOKS (Performance)
+
+```csharp
+private void Init()
+{
+    // Unsubscribe from expensive hooks until needed
+    Unsubscribe(nameof(OnEntityTakeDamage));
+    Unsubscribe(nameof(OnPlayerInput));
+}
+
+private void EnableFeature()
+{
+    Subscribe(nameof(OnEntityTakeDamage));
+    Subscribe(nameof(OnPlayerInput));
+}
+
+private void DisableFeature()
+{
+    Unsubscribe(nameof(OnEntityTakeDamage));
+    Unsubscribe(nameof(OnPlayerInput));
+}
+```
+
+## IMAGE LIBRARY INTEGRATION
+
+```csharp
+[PluginReference] private Plugin ImageLibrary;
+
+private bool AddImage(string url, string name)
+{
+    return ImageLibrary?.Call<bool>("AddImage", url, name, 0UL) ?? false;
+}
+
+private string GetImage(string name)
+{
+    return ImageLibrary?.Call<string>("GetImage", name) ?? string.Empty;
+}
+
+private void OnServerInitialized()
+{
+    if (ImageLibrary == null)
+    {
+        PrintWarning("ImageLibrary not found! Images will not work.");
+        return;
+    }
+    
+    // Add images
+    AddImage("https://example.com/image.png", "myimage");
+}
+
+// In CUI:
+private void AddImageToUI(CuiElementContainer container, string parent, string imageName)
+{
+    container.Add(new CuiElement
+    {
+        Parent = parent,
+        Components =
+        {
+            new CuiRawImageComponent { Png = GetImage(imageName) },
+            new CuiRectTransformComponent { AnchorMin = "0 0", AnchorMax = "1 1" }
+        }
+    });
+}
+```
+
+## ECONOMICS / SERVER REWARDS INTEGRATION
+
+```csharp
+[PluginReference] private Plugin Economics, ServerRewards;
+
+private double GetBalance(ulong playerId)
+{
+    return Economics?.Call<double>("Balance", playerId) ?? 0;
+}
+
+private bool Withdraw(ulong playerId, double amount)
+{
+    var result = Economics?.Call<bool>("Withdraw", playerId, amount);
+    return result ?? false;
+}
+
+private bool Deposit(ulong playerId, double amount)
+{
+    var result = Economics?.Call<bool>("Deposit", playerId, amount);
+    return result ?? false;
+}
+
+private int GetRewardPoints(ulong playerId)
+{
+    return ServerRewards?.Call<int>("CheckPoints", playerId) ?? 0;
+}
+
+private bool TakeRewardPoints(ulong playerId, int amount)
+{
+    return ServerRewards?.Call<bool>("TakePoints", playerId, amount) ?? false;
+}
+```
+
+## ZONE MANAGER INTEGRATION
+
+```csharp
+[PluginReference] private Plugin ZoneManager;
+
+private bool IsInZone(BasePlayer player, string zoneId)
+{
+    return ZoneManager?.Call<bool>("IsPlayerInZone", zoneId, player) ?? false;
+}
+
+private string[] GetPlayerZones(BasePlayer player)
+{
+    return ZoneManager?.Call<string[]>("GetPlayerZoneIDs", player) ?? new string[0];
+}
+
+private bool IsInAnyZone(BasePlayer player)
+{
+    var zones = GetPlayerZones(player);
+    return zones != null && zones.Length > 0;
+}
+```
+
+## CLANS INTEGRATION
+
+```csharp
+[PluginReference] private Plugin Clans;
+
+private string GetClanTag(ulong playerId)
+{
+    return Clans?.Call<string>("GetClanOf", playerId);
+}
+
+private bool SameClan(ulong player1, ulong player2)
+{
+    var clan1 = GetClanTag(player1);
+    var clan2 = GetClanTag(player2);
+    return !string.IsNullOrEmpty(clan1) && clan1 == clan2;
+}
+
+private List<ulong> GetClanMembers(string clanTag)
+{
+    var members = Clans?.Call<List<string>>("GetClanMembers", clanTag);
+    return members?.Select(ulong.Parse).ToList() ?? new List<ulong>();
+}
+```
+
+## ADVANCED CUI PATTERNS
+
+```csharp
+// Input field with command
+private void AddInputField(CuiElementContainer container, string parent, string command, string placeholder = "")
+{
+    var inputName = CuiHelper.GetGuid();
+    
+    container.Add(new CuiElement
+    {
+        Parent = parent,
+        Name = inputName,
+        Components =
+        {
+            new CuiInputFieldComponent
+            {
+                Text = "",
+                FontSize = 14,
+                Command = command,
+                Color = "1 1 1 1",
+                CharsLimit = 100
+            },
+            new CuiRectTransformComponent { AnchorMin = "0.1 0.4", AnchorMax = "0.9 0.6" }
+        }
+    });
+}
+
+// Scrollable panel (using multiple pages)
+private int _currentPage = 0;
+private const int ItemsPerPage = 10;
+
+private void ShowPage(BasePlayer player, List<string> items)
+{
+    var pageItems = items.Skip(_currentPage * ItemsPerPage).Take(ItemsPerPage).ToList();
+    int totalPages = (int)Math.Ceiling(items.Count / (double)ItemsPerPage);
+    
+    // Build UI with pageItems
+    // Add prev/next buttons that call commands to change _currentPage
+}
+
+// Outline effect on text
+container.Add(new CuiElement
+{
+    Parent = parent,
+    Components =
+    {
+        new CuiTextComponent 
+        { 
+            Text = "Outlined Text", 
+            FontSize = 20, 
+            Align = TextAnchor.MiddleCenter,
+            Color = "1 1 1 1"
+        },
+        new CuiOutlineComponent { Color = "0 0 0 1", Distance = "1 -1" },
+        new CuiRectTransformComponent { AnchorMin = "0 0", AnchorMax = "1 1" }
+    }
+});
+```
+
+## ENTITY SPAWNING PATTERNS
+
+```csharp
+// Spawn entity at position
+private BaseEntity SpawnEntity(string prefab, Vector3 position, Quaternion rotation)
+{
+    var entity = GameManager.server.CreateEntity(prefab, position, rotation);
+    if (entity == null) return null;
+    
+    entity.Spawn();
+    return entity;
+}
+
+// Spawn NPC
+private ScientistNPC SpawnScientist(Vector3 position)
+{
+    var npc = (ScientistNPC)GameManager.server.CreateEntity(
+        "assets/rust.ai/agents/npcplayer/humannpc/scientist/scientistnpc_heavy.prefab",
+        position, Quaternion.identity);
+    
+    if (npc == null) return null;
+    
+    npc.Spawn();
+    npc.SetHealth(500f);
+    
+    return npc;
+}
+
+// Spawn loot container
+private LootContainer SpawnLootBox(Vector3 position, string prefab = "assets/bundled/prefabs/radtown/crate_normal.prefab")
+{
+    var container = (LootContainer)GameManager.server.CreateEntity(prefab, position, Quaternion.identity);
+    if (container == null) return null;
+    
+    container.Spawn();
+    container.SpawnLoot();
+    
+    return container;
+}
+
+// Spawn with parent (on vehicle, etc)
+private void SpawnOnParent(BaseEntity parent, string prefab, Vector3 localPosition)
+{
+    var entity = GameManager.server.CreateEntity(prefab, parent.transform.TransformPoint(localPosition));
+    if (entity == null) return;
+    
+    entity.SetParent(parent, true);
+    entity.Spawn();
+}
+```
+
+## BUILDING SYSTEM PATTERNS
+
+```csharp
+// Get building privilege
+private BuildingPrivlidge GetTC(BasePlayer player)
+{
+    return player.GetBuildingPrivilege();
+}
+
+// Check if player is building authed
+private bool IsBuildingAuthed(BasePlayer player)
+{
+    var priv = GetTC(player);
+    return priv != null && priv.IsAuthed(player);
+}
+
+// Get all building blocks in a building
+private List<BuildingBlock> GetBuildingBlocks(BuildingPrivlidge tc)
+{
+    var building = tc.GetBuilding();
+    if (building == null) return new List<BuildingBlock>();
+    
+    return building.buildingBlocks?.ToList() ?? new List<BuildingBlock>();
+}
+
+// Upgrade building block
+private void UpgradeBlock(BuildingBlock block, BuildingGrade.Enum grade, BasePlayer player)
+{
+    block.SetGrade(grade);
+    block.SetHealthToMax();
+    block.SendNetworkUpdate();
+    block.UpdateSkin();
+    
+    Effect.server.Run("assets/bundled/prefabs/fx/build/promote_" + grade.ToString().ToLower() + ".prefab", 
+        block.transform.position);
+}
+```
+
+## ITEM MANIPULATION PATTERNS
+
+```csharp
+// Create item with condition
+private Item CreateItem(string shortname, int amount, ulong skin = 0, float condition = -1f)
+{
+    var item = ItemManager.CreateByName(shortname, amount, skin);
+    if (item == null) return null;
+    
+    if (condition >= 0 && item.hasCondition)
+        item.condition = condition;
+    
+    return item;
+}
+
+// Give item with overflow drop
+private void GiveItemSafe(BasePlayer player, Item item)
+{
+    if (!player.inventory.GiveItem(item))
+        item.Drop(player.transform.position + Vector3.up, Vector3.up * 2f);
+}
+
+// Find item in player inventory
+private Item FindItem(BasePlayer player, string shortname)
+{
+    return player.inventory.FindItemByItemName(shortname);
+}
+
+// Take items from player
+private int TakeItems(BasePlayer player, string shortname, int amount)
+{
+    var itemDef = ItemManager.FindItemDefinition(shortname);
+    if (itemDef == null) return 0;
+    
+    return player.inventory.Take(null, itemDef.itemid, amount);
+}
+
+// Count items
+private int CountItems(BasePlayer player, string shortname)
+{
+    var itemDef = ItemManager.FindItemDefinition(shortname);
+    if (itemDef == null) return 0;
+    
+    return player.inventory.GetAmount(itemDef.itemid);
+}
+
+// Add item to specific container
+private bool AddToContainer(ItemContainer container, Item item)
+{
+    return item.MoveToContainer(container);
+}
+```
+
+## PLAYER STATE PATTERNS
+
+```csharp
+// Check all player states
+private bool CanInteract(BasePlayer player)
+{
+    if (player == null || !player.IsConnected) return false;
+    if (player.IsSleeping()) return false;
+    if (player.IsWounded()) return false;
+    if (player.IsDead()) return false;
+    if (player.IsSpectating()) return false;
+    if (player.isMounted) return false;
+    
+    return true;
+}
+
+// Teleport player safely
+private void TeleportPlayer(BasePlayer player, Vector3 position)
+{
+    if (player.isMounted)
+        player.GetMounted().DismountPlayer(player, true);
+    
+    player.Teleport(position);
+    player.SendNetworkUpdateImmediate();
+}
+
+// Heal player
+private void HealPlayer(BasePlayer player, float amount = -1f)
+{
+    if (amount < 0)
+        player.SetHealth(player.MaxHealth());
+    else
+        player.Heal(amount);
+    
+    player.metabolism.calories.value = player.metabolism.calories.max;
+    player.metabolism.hydration.value = player.metabolism.hydration.max;
+    player.metabolism.bleeding.value = 0;
+    player.metabolism.radiation_poison.value = 0;
+    player.metabolism.SendChangesToClient();
+}
+
+// Kill player
+private void KillPlayer(BasePlayer player)
+{
+    player.Die();
+}
+```
+
+## WEB REQUESTS PATTERNS
+
+```csharp
+// GET request
+private void GetRequest(string url, Action<int, string> callback)
+{
+    webrequest.Enqueue(url, null, (code, response) =>
+    {
+        if (code != 200 || string.IsNullOrEmpty(response))
+        {
+            PrintError($"Request failed: {code}");
+            callback?.Invoke(code, null);
+            return;
+        }
+        callback?.Invoke(code, response);
+    }, this, RequestMethod.GET);
+}
+
+// POST request with JSON
+private void PostRequest(string url, object data, Action<int, string> callback)
+{
+    var json = JsonConvert.SerializeObject(data);
+    var headers = new Dictionary<string, string>
+    {
+        ["Content-Type"] = "application/json"
+    };
+    
+    webrequest.Enqueue(url, json, (code, response) =>
+    {
+        callback?.Invoke(code, response);
+    }, this, RequestMethod.POST, headers);
+}
+
+// Discord webhook
+private void SendDiscordMessage(string webhookUrl, string message, string username = "Rust Server")
+{
+    var payload = new
+    {
+        content = message,
+        username = username
+    };
+    
+    PostRequest(webhookUrl, payload, (code, response) =>
+    {
+        if (code != 204 && code != 200)
+            PrintError($"Discord webhook failed: {code}");
+    });
+}
+```
+
+---
+
+# MANDATORY 3-PASS VALIDATION SYSTEM
+
+## ⚠️ CRITICAL: DO NOT DELIVER CODE UNTIL ALL 3 PASSES COMPLETE ⚠️
+
+Before delivering ANY plugin code, you MUST complete THREE full validation passes.
+Each pass must be done SEPARATELY - do not combine them.
+Document each pass with checkmarks.
+
+---
+
+## PASS 1: SYNTAX & STRUCTURE VALIDATION
+
+Read through the ENTIRE file checking:
+
+```
+□ All `using` statements at top of file
+□ Namespace is `Oxide.Plugins`
+□ Class has [Info("Name", "Author", "Version")] attribute
+□ Class has [Description("...")] attribute
+□ Class inherits from `RustPlugin` or `CovalencePlugin`
+□ All brackets `{ }` are properly matched and closed
+□ All parentheses `( )` are properly matched
+□ All semicolons `;` present where needed
+□ All string literals `""` properly closed
+□ All `#region` has matching `#endregion`
+□ No duplicate method names
+□ No duplicate variable names in same scope
+□ All generic types closed `<>`
+□ All array brackets closed `[]`
+```
+
+**After completing Pass 1, write:**
+```
+✓ PASS 1 COMPLETE: Syntax & Structure validated
+```
+
+---
+
+## PASS 2: OXIDE/RUST SPECIFIC VALIDATION
+
+Check every hook and Oxide-specific code:
+
+```
+□ All hooks have EXACT correct signatures (check docs.umod.org)
+□ `permission.RegisterPermission()` called in `Init()` for ALL permissions
+□ `UserIDString` used for permissions (NOT `userID.ToString()`)
+□ All `[PluginReference]` fields are `private Plugin PluginName`
+□ Config class has `[JsonProperty]` on all public fields
+□ `LoadDefaultConfig()` implemented
+□ `LoadConfig()` has try-catch with fallback
+□ `SaveConfig()` implemented
+□ Data loading has null fallback `?? new DataClass()`
+□ All timer callbacks check if player still valid
+□ All CUI elements have unique names
+□ `CuiHelper.DestroyUi()` called before `AddUi()` for same panel
+□ Commands registered properly (attribute or cmd.AddChatCommand)
+```
+
+**After completing Pass 2, write:**
+```
+✓ PASS 2 COMPLETE: Oxide/Rust patterns validated
+```
+
+---
+
+## PASS 3: SAFETY & CLEANUP VALIDATION
+
+Verify null checks and cleanup:
+
+```
+□ Every `BasePlayer` access has null check
+□ Every `player.IsConnected` check before sending messages/UI
+□ Every entity access checks `entity == null || entity.IsDestroyed`
+□ Every `Item` creation checks for null result
+□ Every plugin reference call uses `?.Call` pattern
+□ `Unload()` method exists
+□ `Unload()` destroys ALL timers
+□ `Unload()` destroys ALL UI for all players
+□ `Unload()` saves data if needed
+□ `Unload()` sets static Instance to null
+□ `Unload()` cleans up all collections
+□ `OnPlayerDisconnected` cleans up player-specific data
+□ No memory leaks (all event subscriptions cleaned)
+□ Collections use `.ToList()` when iterating and modifying
+□ `NextTick()` used for collection modifications in hooks
+```
+
+**After completing Pass 3, write:**
+```
+✓ PASS 3 COMPLETE: Safety & Cleanup validated
+```
+
+---
+
+## FINAL DELIVERY CHECKLIST
+
+Only after ALL THREE passes show ✓, write:
+
+```
+═══════════════════════════════════════════════════════
+✓ PASS 1 COMPLETE: Syntax & Structure validated
+✓ PASS 2 COMPLETE: Oxide/Rust patterns validated  
+✓ PASS 3 COMPLETE: Safety & Cleanup validated
+═══════════════════════════════════════════════════════
+PLUGIN VALIDATED - READY FOR DEPLOYMENT
+═══════════════════════════════════════════════════════
+```
+
+Then deliver the complete plugin code.
+
+**IF ANY CHECK FAILS:** Fix the issue, then restart that pass from the beginning.
+
+---
+
+# EXECUTION FLOW
+
+When `/maxthinkingrust` is invoked:
+
+1. **"MaxThinking Rust engaged. Reading memory file..."**
+   - Read `rust_memory.md` for patterns and known issues
+
+2. **Phase 1: Codebase Analysis**
+   - Scan existing .cs plugins for patterns
+   - Note conventions and dependencies
+
+3. **Phase 2: Agent Analysis**
+   - Run all 6 specialist agents
+   - Research on umod.org and codefling.com
+
+4. **Phase 3: Implementation**
+   - Write the complete plugin code
+   - Match existing codebase style
+
+5. **Phase 4: MANDATORY 3-PASS VALIDATION**
+   - Pass 1: Syntax & Structure
+   - Pass 2: Oxide/Rust Specific
+   - Pass 3: Safety & Cleanup
+   - **DO NOT SKIP ANY PASS**
+
+6. **Phase 5: Delivery**
+   - Only after all 3 passes complete
+   - Include permission list, command list, config explanation
+
+7. **Phase 6: Memory Update**
+   - Update `rust_memory.md` with any new patterns learned
+
+**Every plugin must be ready to drop into oxide/plugins and work FIRST TRY.**

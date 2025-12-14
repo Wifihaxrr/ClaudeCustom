@@ -253,10 +253,85 @@ void OnNewSave(string filename)
 "assets/bundled/prefabs/fx/survey_explosion.prefab"
 "assets/bundled/prefabs/fx/ore_break.prefab"
 "assets/bundled/prefabs/fx/impacts/stab/rock/stab_rock_01.prefab"
+"assets/bundled/prefabs/fx/gestures/drink_vomit.prefab"
+"assets/bundled/prefabs/fx/player/howl.prefab"
+"assets/prefabs/misc/xmas/presents/effects/unwrap.prefab"
 
 // Entities
 "assets/prefabs/deployable/large wood storage/box.wooden.large.prefab"
 "assets/prefabs/deployable/woodenbox/woodbox_deployed.prefab"
+"assets/rust.ai/agents/npcplayer/humannpc/scientist/scientistnpc_heavy.prefab"
+"assets/bundled/prefabs/radtown/crate_normal.prefab"
+"assets/prefabs/npc/murderer/murderer.prefab"
+"assets/prefabs/npc/scarecrow/scarecrow.prefab"
+
+// Vehicles
+"assets/content/vehicles/minicopter/minicopter.entity.prefab"
+"assets/content/vehicles/scrap heli carrier/scraptransporthelicopter.prefab"
+"assets/content/vehicles/boats/rhib/rhib.prefab"
+"assets/content/vehicles/modularcar/car_chassis_2module.entity.prefab"
+```
+
+---
+
+## ADVANCED PATTERNS
+
+### Coroutines (Long Operations)
+```csharp
+private Coroutine _coroutine;
+
+private IEnumerator MyCoroutine()
+{
+    int count = 0;
+    foreach (var item in largeCollection)
+    {
+        // Process
+        if (++count % 100 == 0)
+            yield return CoroutineEx.waitForEndOfFrame;
+    }
+}
+
+// Start: _coroutine = ServerMgr.Instance.StartCoroutine(MyCoroutine());
+// Stop in Unload: ServerMgr.Instance.StopCoroutine(_coroutine);
+```
+
+### Subscribe/Unsubscribe Hooks
+```csharp
+private void Init()
+{
+    Unsubscribe(nameof(OnEntityTakeDamage)); // Expensive hook
+}
+
+private void EnableFeature()
+{
+    Subscribe(nameof(OnEntityTakeDamage));
+}
+```
+
+### Plugin Integration Patterns
+```csharp
+// Economics
+Economics?.Call<bool>("Withdraw", playerId, amount);
+Economics?.Call<double>("Balance", playerId);
+
+// ServerRewards
+ServerRewards?.Call<int>("CheckPoints", playerId);
+
+// ImageLibrary
+ImageLibrary?.Call<string>("GetImage", imageName);
+
+// ZoneManager
+ZoneManager?.Call<bool>("IsPlayerInZone", zoneId, player);
+
+// Clans
+Clans?.Call<string>("GetClanOf", playerId);
+```
+
+### Safe Teleport
+```csharp
+if (player.isMounted)
+    player.GetMounted().DismountPlayer(player, true);
+player.Teleport(position);
 ```
 
 ---
@@ -265,7 +340,8 @@ void OnNewSave(string filename)
 
 *Add notes here during development sessions:*
 
-- [Date] - [What was learned/fixed]
+- [2024-12-14] - Fixed ResourceContainer.itemList error - should be resourceSpawnList
+- [2024-12-14] - For OreResourceEntity, use GetComponent<ResourceDispenser>().containedItems
 
 ---
 
