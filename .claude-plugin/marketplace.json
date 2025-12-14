@@ -1,7 +1,14 @@
 {
   "name": "ClaudeCustom",
-  "description": "MaxThinking Plugin Marketplace - Elite deep-analysis plugins for Claude Code",
-  "version": "1.0.0",
+  "owner": {
+    "name": "Wifihaxrr",
+    "url": "https://github.com/Wifihaxrr"
+  },
+  "metadata": {
+    "description": "MaxThinking Plugin Marketplace - Elite deep-analysis plugins for Claude Code",
+    "version": "1.0.0",
+    "homepage": "https://github.com/Wifihaxrr/ClaudeCustom"
+  },
   "plugins": [
     {
       "name": "maxthinking",
