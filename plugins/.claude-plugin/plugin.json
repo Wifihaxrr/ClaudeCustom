@@ -1,0 +1,26 @@
+{
+  "name": "maxthinking",
+  "description": "Elite deep-analysis with 6 specialist agents. Use /maxthinking for any stack, /maxthinkingrust for Rust Oxide/uMod plugins, /maxthinkingwow for WoW Eluna Lua scripting.",
+  "version": "1.0.0",
+  "author": {
+    "name": "MaxThinking"
+  },
+  "keywords": [
+    "plan",
+    "explore",
+    "refactoring",
+    "testing",
+    "code-review",
+    "workflow",
+    "debugging",
+    "rust",
+    "oxide",
+    "umod",
+    "wow",
+    "eluna",
+    "lua",
+    "game",
+    "server"
+  ],
+  "commands": "./commands/"
+}
