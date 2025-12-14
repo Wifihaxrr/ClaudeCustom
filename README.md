@@ -2,18 +2,24 @@
 
 Elite deep-analysis plugins for Claude Code.
 
-## Installation
+## 🚀 Quick Start
 
 Add this marketplace to Claude Code:
 
-```bash
-claude plugins:add-marketplace https://github.com/YOUR_USERNAME/maxthinking-marketplace
+```
+/plugin marketplace add Wifihaxrr/ClaudeCustom
 ```
 
-Then install the plugin:
+Then browse and install plugins:
 
-```bash
-claude plugins:install maxthinking
+```
+/plugin
+```
+
+Install maxthinking directly:
+
+```
+/plugin install maxthinking@ClaudeCustom
 ```
 
 ## Available Plugins
@@ -52,6 +58,14 @@ Built-in knowledge for WoW private server scripting:
 - Gossip menu system
 - Standard Eluna vs AIO detection
 - MANDATORY search of elunaluaengine.github.io docs
+
+## ⭐ Featured Commands
+
+| Command | Description |
+|---------|-------------|
+| `/maxthinking` | General purpose deep analysis for any tech stack |
+| `/maxthinkingrust` | Rust game Oxide/uMod C# plugin development |
+| `/maxthinkingwow` | World of Warcraft Eluna Lua scripting |
 
 ## License
 
