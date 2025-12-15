@@ -46,6 +46,16 @@ player.runSpeed              // ❌ DOESN'T EXIST
 PlayerFlags.Speeding         // ❌ DOESN'T EXIST
 ```
 
+### GOD MODE - THESE DON'T EXIST:
+```csharp
+player.SetGodMode()          // ❌ DOESN'T EXIST
+player.godMode               // ❌ DOESN'T EXIST
+PlayerFlags.God              // ❌ DOESN'T EXIST
+PlayerFlags.GodMode          // ❌ DOESN'T EXIST
+player.SetInvulnerable()     // ❌ DOESN'T EXIST
+```
+**For god mode, use OnEntityTakeDamage hook to block damage!**
+
 ### CUI - THESE DON'T EXIST:
 ```csharp
 CuiPanel.ScrollRect     // ❌ DOESN'T EXIST
@@ -61,11 +71,39 @@ CuiSlider               // ❌ DOESN'T EXIST
 
 ## MANDATORY WORKFLOW
 
-### STEP 1: READ THE WORKING TEMPLATE
+### STEP 1: READ MEGA-TEMPLATES (PRIMARY SOURCE - DO THIS FIRST!)
 ```
-Read File: maxthinking/rust/template.cs
+Read File: maxthinking/rust/mega_templates.cs
 ```
-**This is a REAL .cs file that compiles. Copy it and fill in your logic.**
+**This file contains 25 COMPLETE WORKING PLUGINS. Find the one closest to your task and COPY IT.**
+
+| # | Template | Use For |
+|---|----------|---------|
+| 1 | Minimal | Hook blocking (18 lines) |
+| 2 | Simple+Config | Config, permissions, blocking |
+| 3 | DataStorage | Persistent player data |
+| 4 | Timers+TOD | Day/night, TOD_Sky |
+| 5 | Cooldowns | Per-player cooldowns |
+| 6 | EntitySpawning | Helis, vehicles |
+| 7 | Teleport | Player teleportation |
+| 8 | SimpleUI | CUI panels, buttons |
+| 9 | GodMode | CORRECT damage blocking |
+| 10 | ItemGiving | Create/give items |
+| 11 | Gathering | OnDispenserGather, quarries |
+| 12 | DoorAutoClose | Door hooks, timers per entity |
+| 13 | Components | FacepunchBehaviour on entities |
+| 14 | Raycast | GetLookingAtEntity, doors |
+| 15 | PluginReferences | Friends, Clans, Economics |
+| 16 | CovalencePlugin | IPlayer, console+chat commands |
+| 17 | WebRequests | HTTP GET/POST, JSON |
+| 18 | StackSizes | OnMaxStackable, item mods |
+| 19 | EntityFlags | SetFlag, On/Off/Locked/Open |
+| 20 | BuildingPrivilege | Cupboard auth, CanBuild |
+| 21 | ConsoleCommands | Admin commands, arg parsing |
+| 22 | Coroutines | Batch processing, IEnumerator |
+| 23 | ChatColors | Formatting, Player.Message |
+| 24 | Protection | Block damage, ownership |
+| 25 | LootHooks | Container hooks, custom loot |
 
 ### STEP 2: READ THE BLACKLIST (Things that DON'T exist)
 ```

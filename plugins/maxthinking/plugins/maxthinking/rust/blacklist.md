@@ -23,6 +23,7 @@ Console.WriteLine("msg");    // ❌ DOES NOT EXIST
 ## BASEPLAYER - THESE DON'T EXIST
 
 ```csharp
+// Speed-related (NONE of these exist)
 player.moveSpeedMultiplier   // ❌ DOES NOT EXIST
 player.speedMultiplier       // ❌ DOES NOT EXIST
 player.runSpeed              // ❌ DOES NOT EXIST
@@ -31,9 +32,35 @@ player.jumpHeight            // ❌ DOES NOT EXIST
 player.gravity               // ❌ DOES NOT EXIST
 player.flySpeed              // ❌ DOES NOT EXIST
 
+// God mode (NONE of these exist)
+player.SetGodMode()          // ❌ DOES NOT EXIST
+player.EnableGodMode()       // ❌ DOES NOT EXIST
+player.godMode               // ❌ DOES NOT EXIST
+player.isGod                 // ❌ DOES NOT EXIST
+player.SetInvulnerable()     // ❌ DOES NOT EXIST
+
+// PlayerFlags that DON'T exist
 PlayerFlags.Speeding         // ❌ DOES NOT EXIST
 PlayerFlags.SpeedBoost       // ❌ DOES NOT EXIST
 PlayerFlags.Flying           // ❌ DOES NOT EXIST
+PlayerFlags.God              // ❌ DOES NOT EXIST
+PlayerFlags.GodMode          // ❌ DOES NOT EXIST
+PlayerFlags.Invulnerable     // ❌ DOES NOT EXIST
+```
+
+**To make a player invulnerable, use:**
+```csharp
+// Block damage in OnEntityTakeDamage hook
+object OnEntityTakeDamage(BaseCombatEntity entity, HitInfo info)
+{
+    var player = entity as BasePlayer;
+    if (player != null && IsGodMode(player))
+    {
+        info.damageTypes.ScaleAll(0f);
+        return true; // Block damage
+    }
+    return null;
+}
 ```
 
 ---
