@@ -1,345 +1,330 @@
 ---
-description: "Use /maxthinkingrust <TASK> for Rust Oxide plugin development with built-in validation. Creates working plugins with zero compilation errors."
+description: "Use /maxthinkingrust <TASK> for Rust Oxide plugin development. Generates working plugins."
 author: MaxThinking
-version: 3.2.0
+version: 4.0.0
 ---
 
-# 🛑 STOP! COPY THIS WORKING CODE! 🛑
+# RUST OXIDE PLUGIN GENERATOR
 
-## HERE IS A COMPLETE WORKING GATHER PLUGIN - USE THIS AS YOUR BASE:
+**User Request:** $ARGUMENTS
+
+---
+
+## STEP 1: PICK THE MATCHING TEMPLATE BELOW
+
+Read all templates, pick the one that matches the user request, copy it exactly, then modify only the values needed.
+
+---
+
+## TEMPLATE A: GATHER MULTIPLIER
+**Use when:** user wants to modify gathering, resource rates, 2x, 3x, 5x, etc.
+
+```csharp
+using System.Collections.Generic;
+using Newtonsoft.Json;
+
+namespace Oxide.Plugins
+{
+    [Info("GatherMultiplier", "Author", "1.0.0")]
+    [Description("Multiplies all gathering rates")]
+    public class GatherMultiplier : RustPlugin
+    {
+        private Configuration config;
+
+        private class Configuration
+        {
+            [JsonProperty("Multiplier")]
+            public float Multiplier = 3.0f;  // CHANGE THIS VALUE
+        }
+
+        protected override void LoadDefaultConfig() => config = new Configuration();
+        protected override void LoadConfig()
+        {
+            base.LoadConfig();
+            try { config = Config.ReadObject<Configuration>(); if (config == null) throw new System.Exception(); }
+            catch { PrintWarning("Config error"); LoadDefaultConfig(); }
+            SaveConfig();
+        }
+        protected override void SaveConfig() => Config.WriteObject(config, true);
+
+        private void OnDispenserGather(ResourceDispenser dispenser, BaseEntity entity, Item item)
+        {
+            var player = entity.ToPlayer();
+            if (player == null) return;
+            item.amount = (int)(item.amount * config.Multiplier);
+        }
+
+        private void OnDispenserBonus(ResourceDispenser dispenser, BaseEntity entity, Item item)
+        {
+            var player = entity.ToPlayer();
+            if (player == null) return;
+            item.amount = (int)(item.amount * config.Multiplier);
+        }
+
+        private void OnQuarryGather(MiningQuarry quarry, Item item)
+        {
+            item.amount = (int)(item.amount * config.Multiplier);
+        }
+    }
+}
+```
+
+---
+
+## TEMPLATE B: BLOCK SOMETHING (Tech Tree, Crafting, etc.)
+**Use when:** user wants to prevent/block/disable something
+
+```csharp
+namespace Oxide.Plugins
+{
+    [Info("BlockFeature", "Author", "1.0.0")]
+    [Description("Blocks a game feature")]
+    class BlockFeature : RustPlugin
+    {
+        // CHANGE "CanSomeHook" to the correct hook name
+        // Return false or true to block, null to allow
+        private object CanUnlockTechTreeNode(BasePlayer player)
+        {
+            return false; // Blocks tech tree
+        }
+    }
+}
+```
+
+---
+
+## TEMPLATE C: DAMAGE/GOD MODE
+**Use when:** user wants invincibility, god mode, damage blocking
 
 ```csharp
 using System.Collections.Generic;
 
 namespace Oxide.Plugins
 {
-    [Info("TripleGather", "Author", "1.0.0")]
-    [Description("Triples all gathering rates")]
-    class TripleGather : RustPlugin
+    [Info("GodMode", "Author", "1.0.0")]
+    [Description("Makes players invincible")]
+    class GodMode : RustPlugin
     {
-        private float multiplier = 3.0f;
+        private const string PERM = "godmode.use";
+        private HashSet<ulong> godPlayers = new HashSet<ulong>();
 
-        private void OnDispenserGather(ResourceDispenser dispenser, BaseEntity entity, Item item)
+        private void Init() => permission.RegisterPermission(PERM, this);
+
+        [ChatCommand("god")]
+        private void CmdGod(BasePlayer player, string cmd, string[] args)
         {
-            var player = entity.ToPlayer();
-            if (player == null) return;
-            item.amount = (int)(item.amount * multiplier);
+            if (!permission.UserHasPermission(player.UserIDString, PERM))
+            {
+                SendReply(player, "No permission");
+                return;
+            }
+            if (godPlayers.Contains(player.userID))
+            {
+                godPlayers.Remove(player.userID);
+                SendReply(player, "God mode OFF");
+            }
+            else
+            {
+                godPlayers.Add(player.userID);
+                SendReply(player, "God mode ON");
+            }
         }
 
-        private void OnDispenserBonus(ResourceDispenser dispenser, BaseEntity entity, Item item)
+        private object OnEntityTakeDamage(BaseCombatEntity entity, HitInfo info)
         {
-            OnDispenserGather(dispenser, entity, item);
-        }
-
-        private void OnQuarryGather(MiningQuarry quarry, Item item)
-        {
-            item.amount = (int)(item.amount * multiplier);
+            var player = entity as BasePlayer;
+            if (player != null && godPlayers.Contains(player.userID))
+            {
+                info.damageTypes.ScaleAll(0f);
+                return true;
+            }
+            return null;
         }
     }
 }
 ```
 
-## ⛔ DO NOT:
-- ❌ Search the web
-- ❌ Search for .cs files
-- ❌ Research online
-- ❌ Invent API methods
-
-## ✅ JUST:
-1. **COPY** the code above
-2. **MODIFY** only what's needed for the task
-3. **DELIVER** the complete plugin
-
 ---
 
-**Task:** $ARGUMENTS
-
----
-
-## 🚨 CRITICAL RULES - MEMORIZE THESE 🚨
-
-### LOGGING - ONLY THESE EXIST:
-```csharp
-Puts("message");         // ✅ USE THIS
-PrintWarning("message"); // ✅ USE THIS
-PrintError("message");   // ✅ USE THIS
-```
-
-### THESE DO NOT EXIST (WILL CAUSE COMPILATION ERRORS):
-```csharp
-LogWarning();           // ❌ DOESN'T EXIST
-LogError();             // ❌ DOESN'T EXIST
-Log();                  // ❌ DOESN'T EXIST
-Debug.Log();            // ❌ DOESN'T EXIST
-Debug.LogWarning();     // ❌ DOESN'T EXIST
-Console.WriteLine();    // ❌ DOESN'T EXIST
-```
-
-### PERMISSIONS - USE UserIDString:
-```csharp
-// ✅ CORRECT
-permission.UserHasPermission(player.UserIDString, PERM)
-
-// ❌ WRONG - will fail
-permission.UserHasPermission(player.userID.ToString(), PERM)
-```
-
-### PLAYER SPEED - THESE DON'T EXIST:
-```csharp
-player.moveSpeedMultiplier   // ❌ DOESN'T EXIST
-player.speedMultiplier       // ❌ DOESN'T EXIST
-player.runSpeed              // ❌ DOESN'T EXIST
-PlayerFlags.Speeding         // ❌ DOESN'T EXIST
-```
-
-### GOD MODE - THESE DON'T EXIST:
-```csharp
-player.SetGodMode()          // ❌ DOESN'T EXIST
-player.godMode               // ❌ DOESN'T EXIST
-PlayerFlags.God              // ❌ DOESN'T EXIST
-PlayerFlags.GodMode          // ❌ DOESN'T EXIST
-player.SetInvulnerable()     // ❌ DOESN'T EXIST
-```
-**For god mode, use OnEntityTakeDamage hook to block damage!**
-
-### CUI - THESE DON'T EXIST:
-```csharp
-CuiPanel.ScrollRect     // ❌ DOESN'T EXIST
-CuiScrollView           // ❌ DOESN'T EXIST
-CuiDropdown             // ❌ DOESN'T EXIST
-CuiCheckbox             // ❌ DOESN'T EXIST
-CuiSlider               // ❌ DOESN'T EXIST
-```
-
-**CUI ONLY HAS: CuiPanel, CuiLabel, CuiButton, CuiInputField, CuiRawImageComponent**
-
----
-
-## MANDATORY WORKFLOW
-
-### STEP 1: READ MEGA-TEMPLATES (PRIMARY SOURCE - DO THIS FIRST!)
-```
-Read File: maxthinking/rust/mega_templates.cs
-```
-**This file contains 25 COMPLETE WORKING PLUGINS. Find the one closest to your task and COPY IT.**
-
-| # | Template | Use For |
-|---|----------|---------|
-| 1 | Minimal | Hook blocking (18 lines) |
-| 2 | Simple+Config | Config, permissions, blocking |
-| 3 | DataStorage | Persistent player data |
-| 4 | Timers+TOD | Day/night, TOD_Sky |
-| 5 | Cooldowns | Per-player cooldowns |
-| 6 | EntitySpawning | Helis, vehicles |
-| 7 | Teleport | Player teleportation |
-| 8 | SimpleUI | CUI panels, buttons |
-| 9 | GodMode | CORRECT damage blocking |
-| 10 | ItemGiving | Create/give items |
-| 11 | Gathering | OnDispenserGather, quarries |
-| 12 | DoorAutoClose | Door hooks, timers per entity |
-| 13 | Components | FacepunchBehaviour on entities |
-| 14 | Raycast | GetLookingAtEntity, doors |
-| 15 | PluginReferences | Friends, Clans, Economics |
-| 16 | CovalencePlugin | IPlayer, console+chat commands |
-| 17 | WebRequests | HTTP GET/POST, JSON |
-| 18 | StackSizes | OnMaxStackable, item mods |
-| 19 | EntityFlags | SetFlag, On/Off/Locked/Open |
-| 20 | BuildingPrivilege | Cupboard auth, CanBuild |
-| 21 | ConsoleCommands | Admin commands, arg parsing |
-| 22 | Coroutines | Batch processing, IEnumerator |
-| 23 | ChatColors | Formatting, Player.Message |
-| 24 | Protection | Block damage, ownership |
-| 25 | LootHooks | Container hooks, custom loot |
-
-### STEP 2: READ THE BLACKLIST (Things that DON'T exist)
-```
-Read File: maxthinking/rust/blacklist.md
-```
-
-### STEP 3: READ THE WHITELIST (Verified API)
-```
-Read File: maxthinking/rust/whitelist.md
-```
-
-### STEP 4: READ A SIMILAR PLUGIN FROM LEARN FOLDER
-
-| If your task involves... | Read this plugin |
-|--------------------------|------------------|
-| Simple command | `NoTechTree.cs` or `BrightNights.cs` |
-| Config + Data storage | `Economics.cs` or `AutoDoors.cs` |
-| Permissions | `TruePVE.cs` or `ZoneManager.cs` |
-| UI/CUI | `Kits.cs` or `Shop.cs` |
-| Timers | `AutoDoors.cs` or `NightLantern.cs` |
-| NPCs | `HumanNPC.cs` or `ZombieHorde.cs` |
-| Vehicles | `VehicleLicence.cs` or `PersonalHeli.cs` |
-| Items/Inventory | `Backpacks.cs` or `StackSizeController.cs` |
-| Building | `BGrade.cs` or `BuildingGrades.cs` |
-| Gathering/Resources | `GatherManager.cs` or `QuickSmelt.cs` |
-
-```
-Read URL: https://raw.githubusercontent.com/Wifihaxrr/ClaudeCustom/main/plugins/maxthinking/learn/[PLUGIN_NAME].cs
-```
-Or local:
-```
-View File: maxthinking/learn/[PLUGIN_NAME].cs
-```
-
-### STEP 5: CHECK COMMON TASKS (if needed)
-```
-Read File: maxthinking/rust/common_tasks.md
-```
-
-### STEP 6: WRITE YOUR PLUGIN
-1. **Copy template.cs exactly**
-2. Replace `PluginName` with your plugin name
-3. Replace `commandname` with your command
-4. Add your logic using **ONLY methods from whitelist.md**
-5. Copy patterns from the learn folder plugin you read
-
----
-
-## BEFORE DELIVERING - RUN THESE CHECKS
-
-### Check 1: Logging (CRITICAL!)
-- [ ] Search for `LogWarning` → **REPLACE with `PrintWarning`**
-- [ ] Search for `LogError` → **REPLACE with `PrintError`**
-- [ ] Search for `Debug.` → **REMOVE IT**
-- [ ] Search for `Console.` → **REMOVE IT**
-
-### Check 2: Structure
-- [ ] Has `[Info("Name", "Author", "1.0.0")]` attribute?
-- [ ] Has `[Description("...")]` attribute?
-- [ ] Inherits from `RustPlugin`?
-- [ ] Has `Init()` method that registers permissions?
-- [ ] Has `Unload()` method that cleans up?
-
-### Check 3: Safety
-- [ ] All player access checks `player == null` first?
-- [ ] All player access checks `player.IsConnected` before sending messages?
-- [ ] Permissions use `player.UserIDString` not `player.userID.ToString()`?
-
-### Check 4: No Hallucination
-- [ ] Every method used exists in whitelist.md?
-- [ ] No methods from blacklist.md are used?
-- [ ] All patterns copied from a real learn folder plugin?
-
-**⚠️ IF ANY CHECK FAILS, FIX IT BEFORE DELIVERING ⚠️**
-
----
-
-## OUTPUT FORMAT
-
-Deliver a COMPLETE, SINGLE .cs file that:
-1. Compiles with ZERO errors on first try
-2. Is ready to drop into `oxide/plugins/` folder
-3. Works immediately
+## TEMPLATE D: GIVE ITEMS
+**Use when:** user wants to give items, kits, starter items
 
 ```csharp
-// Your complete plugin code here
-```
-
----
-
-## VERIFIED HOOK SIGNATURES (do not guess!)
-
-### Player Hooks
-```csharp
-void OnPlayerConnected(BasePlayer player)
-void OnPlayerDisconnected(BasePlayer player, string reason)
-void OnPlayerRespawned(BasePlayer player)
-void OnPlayerDeath(BasePlayer player, HitInfo info)
-void OnPlayerSleep(BasePlayer player)
-void OnPlayerSleepEnded(BasePlayer player)
-```
-
-### Entity Hooks
-```csharp
-void OnEntitySpawned(BaseNetworkable entity)
-void OnEntityKill(BaseNetworkable entity)
-void OnEntityDeath(BaseCombatEntity entity, HitInfo info)
-object OnEntityTakeDamage(BaseCombatEntity entity, HitInfo info)
-```
-
-### Building Hooks
-```csharp
-void OnEntityBuilt(Planner planner, GameObject go)
-object CanBuild(Planner planner, Construction prefab, Construction.Target target)
-void OnStructureUpgrade(BuildingBlock block, BasePlayer player, BuildingGrade.Enum grade)
-```
-
-### Item Hooks
-```csharp
-void OnItemAddedToContainer(ItemContainer container, Item item)
-void OnItemRemovedFromContainer(ItemContainer container, Item item)
-object OnItemPickup(Item item, BasePlayer player)
-```
-
-### Server Hooks
-```csharp
-void OnServerInitialized()
-void OnServerSave()
-void OnNewSave(string filename)
-```
-
----
-
-## QUICK REFERENCE - VERIFIED API
-
-### Logging
-```csharp
-Puts("message");           // Normal log
-PrintWarning("message");   // Warning (yellow)
-PrintError("message");     // Error (red)
-```
-
-### Permissions
-```csharp
-permission.RegisterPermission("plugin.use", this);
-permission.UserHasPermission(player.UserIDString, "plugin.use");
-```
-
-### Config
-```csharp
-private class Configuration
+namespace Oxide.Plugins
 {
-    [JsonProperty("Setting Name")]
-    public bool Setting = true;
+    [Info("GiveItems", "Author", "1.0.0")]
+    [Description("Gives items to players")]
+    class GiveItems : RustPlugin
+    {
+        [ChatCommand("kit")]
+        private void CmdKit(BasePlayer player, string cmd, string[] args)
+        {
+            GiveItem(player, "rifle.ak", 1);
+            GiveItem(player, "ammo.rifle", 100);
+            GiveItem(player, "largemedkit", 5);
+            SendReply(player, "Kit given!");
+        }
+
+        private void GiveItem(BasePlayer player, string shortname, int amount)
+        {
+            var item = ItemManager.CreateByName(shortname, amount);
+            if (item == null) return;
+            if (!player.inventory.GiveItem(item))
+            {
+                item.Drop(player.transform.position, UnityEngine.Vector3.up);
+            }
+        }
+    }
 }
 ```
 
-### Data Storage
-```csharp
-Interface.Oxide.DataFileSystem.WriteObject(Name, storedData);
-storedData = Interface.Oxide.DataFileSystem.ReadObject<StoredData>(Name);
-```
+---
 
-### Timers
-```csharp
-timer.Once(5f, () => { });
-Timer myTimer = timer.Every(5f, () => { });
-myTimer?.Destroy();
-```
+## TEMPLATE E: TELEPORT
+**Use when:** user wants teleportation
 
-### Find Player
 ```csharp
-BasePlayer.FindByID(steamId);
-BasePlayer.activePlayerList.FirstOrDefault(x => x.UserIDString == id);
-```
+using UnityEngine;
 
-### Give Item
-```csharp
-var item = ItemManager.CreateByName("rifle.ak", 1);
-player.inventory.GiveItem(item);
-```
+namespace Oxide.Plugins
+{
+    [Info("Teleport", "Author", "1.0.0")]
+    [Description("Teleports players")]
+    class Teleport : RustPlugin
+    {
+        private const string PERM = "teleport.use";
+        private void Init() => permission.RegisterPermission(PERM, this);
 
-### CUI
-```csharp
-var container = new CuiElementContainer();
-container.Add(new CuiPanel { ... }, "Overlay", "PanelName");
-CuiHelper.AddUi(player, container);
-CuiHelper.DestroyUi(player, "PanelName");
+        [ChatCommand("tp")]
+        private void CmdTp(BasePlayer player, string cmd, string[] args)
+        {
+            if (!permission.UserHasPermission(player.UserIDString, PERM))
+            {
+                SendReply(player, "No permission");
+                return;
+            }
+            if (args.Length < 1)
+            {
+                SendReply(player, "Usage: /tp <player>");
+                return;
+            }
+            var target = FindPlayer(args[0]);
+            if (target == null)
+            {
+                SendReply(player, "Player not found");
+                return;
+            }
+            player.Teleport(target.transform.position);
+            SendReply(player, $"Teleported to {target.displayName}");
+        }
+
+        private BasePlayer FindPlayer(string name)
+        {
+            foreach (var p in BasePlayer.activePlayerList)
+            {
+                if (p.displayName.ToLower().Contains(name.ToLower()))
+                    return p;
+            }
+            return null;
+        }
+    }
+}
 ```
 
 ---
 
-**REMEMBER: If you use a method that doesn't exist in the whitelist, it will FAIL TO COMPILE. When in doubt, check the learn folder plugins for how they do it.**
+## TEMPLATE F: SIMPLE UI
+**Use when:** user wants a UI panel
+
+```csharp
+using Oxide.Game.Rust.Cui;
+using UnityEngine;
+
+namespace Oxide.Plugins
+{
+    [Info("SimpleUI", "Author", "1.0.0")]
+    [Description("Shows a simple UI")]
+    class SimpleUI : RustPlugin
+    {
+        private const string PANEL = "SimpleUIPanel";
+
+        private void Unload()
+        {
+            foreach (var player in BasePlayer.activePlayerList)
+                CuiHelper.DestroyUi(player, PANEL);
+        }
+
+        [ChatCommand("ui")]
+        private void CmdUI(BasePlayer player, string cmd, string[] args)
+        {
+            ShowUI(player);
+        }
+
+        [ConsoleCommand("simpleui.close")]
+        private void CmdClose(ConsoleSystem.Arg arg)
+        {
+            var player = arg.Player();
+            if (player != null) CuiHelper.DestroyUi(player, PANEL);
+        }
+
+        private void ShowUI(BasePlayer player)
+        {
+            CuiHelper.DestroyUi(player, PANEL);
+            var container = new CuiElementContainer();
+
+            container.Add(new CuiPanel
+            {
+                Image = { Color = "0 0 0 0.9" },
+                RectTransform = { AnchorMin = "0.3 0.3", AnchorMax = "0.7 0.7" },
+                CursorEnabled = true
+            }, "Overlay", PANEL);
+
+            container.Add(new CuiLabel
+            {
+                Text = { Text = "Hello World!", FontSize = 24, Align = TextAnchor.MiddleCenter },
+                RectTransform = { AnchorMin = "0 0.5", AnchorMax = "1 0.9" }
+            }, PANEL);
+
+            container.Add(new CuiButton
+            {
+                Button = { Color = "0.8 0.2 0.2 1", Command = "simpleui.close" },
+                RectTransform = { AnchorMin = "0.3 0.1", AnchorMax = "0.7 0.3" },
+                Text = { Text = "Close", FontSize = 18, Align = TextAnchor.MiddleCenter }
+            }, PANEL);
+
+            CuiHelper.AddUi(player, container);
+        }
+    }
+}
+```
+
+---
+
+## CRITICAL RULES
+
+### LOGGING - USE THESE:
+- `Puts("message");` - normal log
+- `PrintWarning("message");` - warning  
+- `PrintError("message");` - error
+
+### NEVER USE (WILL BREAK):
+- `LogWarning()` - DOES NOT EXIST
+- `LogError()` - DOES NOT EXIST
+- `Debug.Log()` - DOES NOT EXIST
+
+### PERMISSIONS:
+```csharp
+permission.UserHasPermission(player.UserIDString, "perm")  // CORRECT
+```
+
+---
+
+## YOUR TASK
+
+1. Read the user request above
+2. Pick the template that matches (A-F)
+3. Copy the template EXACTLY
+4. Change ONLY what is needed (plugin name, values, commands)
+5. Output the complete .cs file
+
+**IMPORTANT**: Do NOT add features not requested. Keep it simple!
