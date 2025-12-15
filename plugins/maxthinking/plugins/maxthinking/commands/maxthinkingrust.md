@@ -1,10 +1,33 @@
 ---
 description: "Use /maxthinkingrust <TASK> for Rust Oxide plugin development with built-in validation. Creates working plugins with zero compilation errors."
 author: MaxThinking
-version: 3.0.0
+version: 3.1.0
 ---
 
-# /maxthinkingrust - VALIDATED OXIDE PLUGIN DEVELOPMENT
+# 🛑 STOP! DO NOT PROCEED UNTIL YOU READ THIS! 🛑
+
+## BEFORE DOING ANYTHING ELSE:
+
+**YOU MUST READ THIS FILE FIRST:**
+```
+plugins/maxthinking/rust/mega_templates.cs
+```
+
+This file contains 25 COMPLETE WORKING PLUGINS. **COPY the template closest to your task!**
+
+## ⛔ FORBIDDEN ACTIONS - DO NOT DO THESE:
+- ❌ **DO NOT** search the web
+- ❌ **DO NOT** search for .cs files
+- ❌ **DO NOT** research online documentation
+- ❌ **DO NOT** invent API methods
+- ❌ **DO NOT** guess how things work
+
+## ✅ REQUIRED ACTIONS:
+1. **READ** `plugins/maxthinking/rust/mega_templates.cs` - FIND A MATCHING TEMPLATE
+2. **READ** `plugins/maxthinking/rust/blacklist.md` - THINGS THAT DON'T EXIST
+3. **COPY** the template code and MODIFY it for the task
+
+---
 
 **Task:** $ARGUMENTS
 
