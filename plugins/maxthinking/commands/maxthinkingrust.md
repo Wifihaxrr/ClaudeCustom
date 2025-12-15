@@ -1,31 +1,54 @@
 ---
 description: "Use /maxthinkingrust <TASK> for Rust Oxide plugin development with built-in validation. Creates working plugins with zero compilation errors."
 author: MaxThinking
-version: 3.1.0
+version: 3.2.0
 ---
 
-# 🛑 STOP! DO NOT PROCEED UNTIL YOU READ THIS! 🛑
+# 🛑 STOP! COPY THIS WORKING CODE! 🛑
 
-## BEFORE DOING ANYTHING ELSE:
+## HERE IS A COMPLETE WORKING GATHER PLUGIN - USE THIS AS YOUR BASE:
 
-**YOU MUST READ THIS FILE FIRST:**
+```csharp
+using System.Collections.Generic;
+
+namespace Oxide.Plugins
+{
+    [Info("TripleGather", "Author", "1.0.0")]
+    [Description("Triples all gathering rates")]
+    class TripleGather : RustPlugin
+    {
+        private float multiplier = 3.0f;
+
+        private void OnDispenserGather(ResourceDispenser dispenser, BaseEntity entity, Item item)
+        {
+            var player = entity.ToPlayer();
+            if (player == null) return;
+            item.amount = (int)(item.amount * multiplier);
+        }
+
+        private void OnDispenserBonus(ResourceDispenser dispenser, BaseEntity entity, Item item)
+        {
+            OnDispenserGather(dispenser, entity, item);
+        }
+
+        private void OnQuarryGather(MiningQuarry quarry, Item item)
+        {
+            item.amount = (int)(item.amount * multiplier);
+        }
+    }
+}
 ```
-plugins/maxthinking/rust/mega_templates.cs
-```
 
-This file contains 25 COMPLETE WORKING PLUGINS. **COPY the template closest to your task!**
+## ⛔ DO NOT:
+- ❌ Search the web
+- ❌ Search for .cs files
+- ❌ Research online
+- ❌ Invent API methods
 
-## ⛔ FORBIDDEN ACTIONS - DO NOT DO THESE:
-- ❌ **DO NOT** search the web
-- ❌ **DO NOT** search for .cs files
-- ❌ **DO NOT** research online documentation
-- ❌ **DO NOT** invent API methods
-- ❌ **DO NOT** guess how things work
-
-## ✅ REQUIRED ACTIONS:
-1. **READ** `plugins/maxthinking/rust/mega_templates.cs` - FIND A MATCHING TEMPLATE
-2. **READ** `plugins/maxthinking/rust/blacklist.md` - THINGS THAT DON'T EXIST
-3. **COPY** the template code and MODIFY it for the task
+## ✅ JUST:
+1. **COPY** the code above
+2. **MODIFY** only what's needed for the task
+3. **DELIVER** the complete plugin
 
 ---
 
