@@ -17,33 +17,40 @@ version: 2.1.0
 
 # MAXTHINKING RUST - OXIDE/UMOD SPECIALIST
 
-## ⚠️ MANDATORY: READ REFERENCE FILES BEFORE ANY CODE ⚠️
+## ⚠️ MANDATORY: READ LEARN FOLDER PLUGINS BEFORE ANY CODE ⚠️
 
-**YOU MUST USE THE `Read File` TOOL TO READ THESE FILES BEFORE WRITING ANY CODE:**
+**YOU MUST USE THE FILE TOOLS TO READ WORKING PLUGINS FROM THE LEARN FOLDER BEFORE WRITING ANY CODE!**
 
-### STEP 1: Read the examples file (REQUIRED)
+### STEP 1: List the learn folder to see available plugins (REQUIRED)
 ```
-Read File: maxthinking/commands/rust_examples.md
+List Directory: maxthinking/learn/
 ```
-This file contains 50+ COMPLETE WORKING PLUGINS including:
-- MiningGun (UI, input, timers, effects, resource gathering)
-- BrightNights (config, permissions, TOD_Sky events)
-- AutoDoors (data storage, timers, door hooks)
-- ChestStacks (MonoBehaviour, ProtoStorage, input handling)
-- Economics (CovalencePlugin, API methods, data persistence)
-- NoTechTree (simple hook blocking, Unsubscribe pattern)
-- BGrade (MonoBehaviour on players, building upgrades)
-- QuickSmelt (FacepunchBehaviour, furnace modification)
-- TurretConfig (entity modification, permission-based settings)
-- Kits (complex UI, data storage, cooldowns, permissions)
-- RemoverTool (raycasting, building removal, refunds)
-- ZoneManager (spatial queries, zone flags, triggers)
-- VehicleLicence (vehicle spawning, ownership, Friends/Clans)
-- Shop (full UI system, economics integration, NPC vendors)
-- Backpacks (inventory extension, container management)
-- **COPY PATTERNS EXACTLY - DO NOT INVENT YOUR OWN**
+This folder contains **85+ COMPLETE PRODUCTION PLUGINS** as .cs files. These are REAL working plugins!
 
-### STEP 2: Read the API reference (REQUIRED)
+### STEP 2: Read 2-3 relevant plugins from the learn folder (REQUIRED)
+Based on your task, pick and READ the most relevant plugins:
+
+| Task Type | Read These Plugins |
+|-----------|-------------------|
+| **UI/CUI** | `AdminMenu.cs`, `Kits.cs`, `Shop.cs`, `ServerPanel.cs` |
+| **Config/Data Storage** | `Economics.cs`, `AutoDoors.cs`, `TurretConfig.cs` |
+| **Building** | `BGrade.cs`, `BuildingGrades.cs`, `RemoverTool.cs` |
+| **Permissions** | `TruePVE.cs`, `ZoneManager.cs`, `NoEscape.cs` |
+| **Vehicles** | `VehicleLicence.cs`, `BuoyantHelicopters.cs`, `JetPack.cs` |
+| **NPCs** | `HumanNPC.cs`, `ZombieHorde.cs`, `BradleyGuards.cs` |
+| **Gathering/Resources** | `GatherManager.cs`, `QuarryManager.cs`, `QuickSmelt.cs` |
+| **Items/Inventory** | `Backpacks.cs`, `Kits.cs`, `StackSizeController.cs` |
+| **Combat/PVP** | `DynamicPVP.cs`, `TruePVE.cs`, `Duelist.cs` |
+| **Events/Quests** | `QuestSystem.cs`, `DangerousTreasures.cs`, `RaidableBases.cs` |
+| **Simple Plugin** | `NoTechTree.cs`, `BrightNights.cs`, `NoGiveNotices.cs` |
+
+**USE VIEW FILE TOOL to read the full source code of these plugins!**
+```
+View File: maxthinking/learn/Economics.cs
+View File: maxthinking/learn/AutoDoors.cs
+```
+
+### STEP 3: Read the API reference (REQUIRED)
 ```
 Read File: maxthinking/commands/rust_reference.md
 ```
@@ -54,7 +61,7 @@ Contains:
 - Entity types and their properties
 - Common prefab paths
 
-### STEP 3: Check session memory
+### STEP 4: Check session memory
 ```
 Read File: maxthinking/commands/rust_memory.md
 ```
@@ -62,7 +69,9 @@ Contains:
 - Common errors and their fixes
 - UPDATE this file when you fix new errors
 
-## ⛔ DO NOT WRITE CODE UNTIL YOU HAVE READ THESE FILES ⛔
+## ⛔ DO NOT WRITE CODE UNTIL YOU HAVE READ AT LEAST 2 PLUGINS FROM LEARN FOLDER ⛔
+
+**CRITICAL: Copy patterns EXACTLY from the learn folder plugins. Do not invent your own patterns!**
 
 ## CRITICAL CLASS CONFUSION TO AVOID
 
@@ -780,37 +789,44 @@ Read through the ENTIRE code one more time:
 
 When `/maxthinkingrust` is invoked:
 
-## ⚠️ STEP 0: MANDATORY FILE READING (DO THIS FIRST!) ⚠️
+## ⚠️ STEP 0: MANDATORY LEARN FOLDER READING (DO THIS FIRST!) ⚠️
 
-**YOU MUST READ THESE FILES BEFORE DOING ANYTHING ELSE:**
+**YOU MUST READ PLUGINS FROM THE LEARN FOLDER BEFORE DOING ANYTHING ELSE:**
 
+1. **List the learn folder:**
 ```
-Use the "Read File" tool to read: maxthinking/commands/rust_examples.md
-```
-
-This file contains 50+ complete working plugin examples. You MUST read it and copy patterns from it.
-
-```
-Use the "Read File" tool to read: maxthinking/commands/rust_reference.md
+List Directory: maxthinking/learn/
 ```
 
-This file contains API reference and critical class information.
+2. **Read 2-3 relevant plugins based on task:**
+```
+View File: maxthinking/learn/Economics.cs      (for economy/data storage)
+View File: maxthinking/learn/AutoDoors.cs      (for entity hooks/timers)
+View File: maxthinking/learn/Kits.cs           (for UI/permissions/commands)
+View File: maxthinking/learn/NoTechTree.cs     (for simple hooks)
+```
 
-**DO NOT SKIP THIS STEP. DO NOT WRITE CODE WITHOUT READING THESE FILES FIRST.**
+3. **Read the reference file:**
+```
+Read File: maxthinking/commands/rust_reference.md
+```
+
+**DO NOT SKIP THIS STEP. DO NOT WRITE CODE WITHOUT READING LEARN FOLDER PLUGINS FIRST.**
 
 ---
 
-1. **"MaxThinking Rust engaged. Reading reference files..."**
-   - READ `maxthinking/commands/rust_examples.md` (REQUIRED)
+1. **"MaxThinking Rust engaged. Reading learn folder plugins..."**
+   - LIST `maxthinking/learn/` to see all 85+ available plugins
+   - READ 2-3 relevant plugins from learn folder based on task (REQUIRED)
    - READ `maxthinking/commands/rust_reference.md` (REQUIRED)
 
-2. **Phase 1:** Scan existing .cs plugins for patterns
+2. **Phase 1:** Scan the learn folder plugins for patterns that match your task
 
 3. **Phase 2:** Run all 6 Rust-specific agents
 
 4. **Phase 3:** Iterate until confident (2-5 passes)
 
-5. **Phase 4:** Write the complete plugin code (COPY PATTERNS FROM rust_examples.md!)
+5. **Phase 4:** Write the complete plugin code (COPY PATTERNS FROM learn folder plugins!)
 
 6. **Phase 5: MANDATORY VALIDATION** - Run ALL 5 validation passes
    - Pass 1: Syntax & Structure ✓

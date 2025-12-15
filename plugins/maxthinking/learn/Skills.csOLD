@@ -1,0 +1,5235 @@
+// #define TESTING
+
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using Facepunch;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
+using Newtonsoft.Json.Linq;
+using Oxide.Core;
+using Oxide.Core.Libraries.Covalence;
+using Oxide.Core.Plugins;
+using Oxide.Game.Rust.Cui;
+using Rust;
+using UnityEngine;
+// Analytics was removed in recent Rust updates
+using Random = UnityEngine.Random;
+
+namespace Oxide.Plugins
+{
+	[Info("Skills", "Mevent/Updated", "1.32.0")]
+	[Description("Adds a system of skills - Updated for latest Rust")]
+	public class Skills : RustPlugin
+	{
+		#region Fields
+
+		[PluginReference] private Plugin
+			ImageLibrary = null,
+			Notifications = null,
+			Notify = null,
+			UINotify = null,
+			TimedPermissions = null;
+
+		private const string Layer = "Com.Mevent.Main";
+
+		private static Skills _instance;
+
+		private bool _enabledImageLibrary;
+
+		private const string PERM_Bypass = "skills.bypass";
+
+		private const string PERM_Wipe = "skills.wipe";
+
+		private readonly Dictionary<ulong, RecoverComponent> _recoverPlayers =
+			new Dictionary<ulong, RecoverComponent>();
+
+		private HashSet<ulong> _containers = new HashSet<ulong>();
+
+		private readonly Dictionary<ulong, float> _timeSinceLastMetabolism = new Dictionary<ulong, float>();
+
+		private enum SkillType
+		{
+			Wood,
+			Stones,
+			Metal,
+			Sulfur,
+			Attack,
+			Secure,
+			Regeneration,
+			Metabolism,
+			ComponentsRates,
+			StandUpChance,
+			CraftSpeed,
+			FastOven,
+			Kits,
+			None,
+			Cloth,
+			Butcher,
+			Scrap,
+			RecyclerSpeed,
+			TransferWipe,
+			MixingTableSpeed,
+			Gather,
+
+			CraftRates
+			//RecyclerChance,
+			//PowerEffieciency
+		}
+
+		private readonly Dictionary<BaseOven, BasePlayer> _playerByOven = new Dictionary<BaseOven, BasePlayer>();
+
+		/*
+		private readonly Dictionary<uint, ulong> _playerIdByRecycler = new Dictionary<uint, ulong>();
+		*/
+
+		#endregion
+
+		#region Config
+
+		private static Configuration _config;
+
+		private class Configuration : SerializableConfiguration
+		{
+			[JsonProperty(PropertyName = "Permission (example: skills.use)")]
+			public string Permission = string.Empty;
+
+			[JsonProperty(PropertyName = "Command")]
+			public string Command = "skills";
+
+			[JsonProperty(PropertyName = "Auto wipe?")]
+			public bool Wipe = true;
+
+			[JsonProperty(PropertyName = "Work with Notify?")]
+			public bool UseNotify = true;
+
+			[JsonProperty(PropertyName = "Store the data on the looted containers in the data-files?")]
+			public bool StoreContainers = false;
+
+			[JsonProperty(PropertyName = "Economy")]
+			public EconomyConf Economy = new EconomyConf
+			{
+				Type = EconomyType.Plugin,
+				AddHook = "Deposit",
+				BalanceHook = "Balance",
+				RemoveHook = "Withdraw",
+				Plug = "Economics",
+				ShortName = "scrap",
+				DisplayName = string.Empty,
+				Skin = 0
+			};
+
+			[JsonProperty(PropertyName = "Maximum level notify")]
+			public INotify MaxLevel = new INotify
+			{
+				Image = "warning",
+				Url = "https://i.imgur.com/p3tKXJV.png",
+				Delay = 0.9f
+			};
+
+			[JsonProperty(PropertyName = "Out of balance notify")]
+			public INotify NotMoney = new INotify
+			{
+				Image = "warning",
+				Url = "https://i.imgur.com/p3tKXJV.png",
+				Delay = 0.9f
+			};
+
+			[JsonProperty(PropertyName = "Background")]
+			public IPanel Background = new IPanel
+			{
+				AnchorMin = "0 0", AnchorMax = "1 1",
+				OffsetMin = "0 0", OffsetMax = "0 0",
+				Image = string.Empty,
+				Color = new IColor("#0D1F4E", 95),
+				isRaw = false,
+				Sprite = "Assets/Content/UI/UI.Background.Tile.psd",
+				Material = "Assets/Icons/IconMaterial.mat"
+			};
+
+			[JsonProperty(PropertyName = "Title")] public IText Title = new IText
+			{
+				AnchorMin = "0.5 0.5", AnchorMax = "0.5 0.5",
+				OffsetMin = "-150 300", OffsetMax = "150 360",
+				Font = "robotocondensed-bold.ttf",
+				Align = TextAnchor.MiddleCenter,
+				FontSize = 38,
+				Color = new IColor("#FFFFFF", 100)
+			};
+
+			[JsonProperty(PropertyName = "Back")] public IText Back = new IText
+			{
+				AnchorMin = "0 0.5", AnchorMax = "0 0.5",
+				OffsetMin = "0 -40", OffsetMax = "65 40",
+				Font = "robotocondensed-bold.ttf",
+				Align = TextAnchor.MiddleCenter,
+				FontSize = 60,
+				Color = new IColor("#FFFFFF", 100)
+			};
+
+			[JsonProperty(PropertyName = "Next")] public IText Next = new IText
+			{
+				AnchorMin = "1 0.5", AnchorMax = "1 0.5",
+				OffsetMin = "-65 -40", OffsetMax = "0 40",
+				Font = "robotocondensed-bold.ttf",
+				Align = TextAnchor.MiddleCenter,
+				FontSize = 60,
+				Color = new IColor("#FFFFFF", 100)
+			};
+
+			[JsonProperty(PropertyName = "Balance")]
+			public IText BalanceText = new IText
+			{
+				AnchorMin = "0.5 0", AnchorMax = "0.5 0",
+				OffsetMin = "-150 0", OffsetMax = "150 75",
+				Font = "robotocondensed-regular.ttf",
+				Align = TextAnchor.MiddleCenter,
+				FontSize = 24,
+				Color = new IColor("#FFFFFF", 100)
+			};
+
+			[JsonProperty(PropertyName = "Enable Balance Icon")]
+			public bool EnableBalanceIcon = false;
+
+			[JsonProperty(PropertyName = "Balance Icon")]
+			public BalanceIcon BalanceIcon = new BalanceIcon
+			{
+				OffsetMinY = 20,
+				OffsetMaxY = 55,
+				Length = 35
+			};
+
+			[JsonProperty(PropertyName = "Close")] public IText CloseLabel = new IText
+			{
+				AnchorMin = "1 1", AnchorMax = "1 1",
+				OffsetMin = "-35 -35", OffsetMax = "-5 -5",
+				Font = "robotocondensed-bold.ttf",
+				Align = TextAnchor.MiddleCenter,
+				FontSize = 24,
+				Color = new IColor("#FFFFFF", 100)
+			};
+
+			[JsonProperty(PropertyName = "Skill Panel")]
+			public SkillPanel SkillPanel = new SkillPanel
+			{
+				Background = new SIPanel
+				{
+					Image = string.Empty,
+					Color = new IColor("#1D3676", 98),
+					isRaw = false,
+					Sprite = "Assets/Content/UI/UI.Background.Tile.psd",
+					Material = "Assets/Icons/IconMaterial.mat",
+					HeightCorrect = 5
+				},
+				Image = new InterfacePosition
+				{
+					AnchorMin = "0 0", AnchorMax = "0 0",
+					OffsetMin = "10 10", OffsetMax = "160 160"
+				},
+				Title = new IText
+				{
+					AnchorMin = "0 0", AnchorMax = "1 0",
+					OffsetMin = "165 135", OffsetMax = "-5 160",
+					Align = TextAnchor.MiddleLeft,
+					FontSize = 20,
+					Font = "robotocondensed-bold.ttf",
+					Color = new IColor("#FFFFFF", 100)
+				},
+				Description = new IText
+				{
+					AnchorMin = "0 0", AnchorMax = "1 0",
+					OffsetMin = "165 30", OffsetMax = "-5 130",
+					Align = TextAnchor.UpperLeft,
+					FontSize = 14,
+					Font = "robotocondensed-regular.ttf",
+					Color = new IColor("#FFFFFF", 100)
+				},
+				Button = new IButton
+				{
+					AnchorMin = "1 0", AnchorMax = "1 0",
+					OffsetMin = "-105 10", OffsetMax = "-10 30",
+					AColor = new IColor("#B5FFC9", 100),
+					DColor = new IColor("#B5FFC9", 25),
+					TextUi = new IText
+					{
+						AnchorMin = "0 0", AnchorMax = "1 1",
+						OffsetMin = "0 0", OffsetMax = "0 0",
+						Align = TextAnchor.MiddleCenter,
+						FontSize = 14,
+						Font = "robotocondensed-regular.ttf",
+						Color = new IColor("#1D3676", 100)
+					}
+				},
+				DescriptionButton = new DescriptionButton
+				{
+					Enabled = false,
+					AnchorMin = "1 0", AnchorMax = "1 0",
+					OffsetMin = "-105 35", OffsetMax = "-10 55",
+					AColor = new IColor("#B5FFC9", 100),
+					DColor = new IColor("#B5FFC9", 25),
+					TextUi = new IText
+					{
+						AnchorMin = "0 0", AnchorMax = "1 1",
+						OffsetMin = "0 0", OffsetMax = "0 0",
+						Align = TextAnchor.MiddleCenter,
+						FontSize = 14,
+						Font = "robotocondensed-regular.ttf",
+						Color = new IColor("#1D3676", 100)
+					}
+				},
+				Cost = new IText
+				{
+					AnchorMin = "1 0", AnchorMax = "1 0",
+					OffsetMin = "-150 10", OffsetMax = "-110 30",
+					Align = TextAnchor.MiddleRight,
+					FontSize = 14,
+					Font = "robotocondensed-regular.ttf",
+					Color = new IColor("#FFFFFF", 100)
+				},
+				AddCost = "$",
+				EnableCostImage = false,
+				AddCostImage = new IPanel
+				{
+					AnchorMin = "1 0", AnchorMax = "1 0",
+					OffsetMin = "-130 10", OffsetMax = "-110 30",
+					Color = new IColor("#FFFFFF", 100),
+					isRaw = true,
+					Image = "https://i.imgur.com/5GdD0cU.png",
+					Sprite = string.Empty,
+					Material = string.Empty
+				},
+				Stages = new IProgress
+				{
+					AnchorMin = "0 0", AnchorMax = "0 0",
+					OffsetMin = "160 10", OffsetMax = "160 10",
+					Height = 20,
+					Width = 10,
+					Margin = 5,
+					AColor = new IColor("#8C70D6", 100),
+					DColor = new IColor("#8C70D6", 25)
+				},
+				Count = 6,
+				Height = 170,
+				Width = 565,
+				Margin = 20,
+				ShowAllStages = true
+			};
+
+			[JsonProperty(PropertyName = "Skills", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public List<Skill> Skills = new List<Skill>
+			{
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.Wood,
+					ID = 0,
+					ShortName = string.Empty,
+					Image = "https://gspics.org/images/2020/09/02/xz6Fy.png",
+					Title = "Woodman",
+					Description =
+						"It's in charge of the tree mining\nWhen you learn the skill, the rate increases by x1",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty,
+							10,
+							133,
+							0,
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 25,
+							164,
+							0,
+							new List<RequiredSkillStage>()),
+						[3] = new StageConf(string.Empty, 40,
+							200,
+							0,
+							new List<RequiredSkillStage>())
+					}
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.Stones,
+					ID = 0,
+					ShortName = string.Empty,
+					Image = "https://gspics.org/images/2020/09/02/xz9mX.png",
+					Title = "Stone Miner",
+					Description =
+						"It's in charge of the stones mining\nWhen you learn the skill, the rate increases by x1",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty, 10,
+							133,
+							0,
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 25,
+							164,
+							0,
+							new List<RequiredSkillStage>()),
+						[3] = new StageConf(string.Empty, 40,
+							200,
+							0,
+							new List<RequiredSkillStage>())
+					}
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.Metal,
+					ID = 0,
+					ShortName = string.Empty,
+					Image = "https://gspics.org/images/2020/09/02/xznT3.png",
+					Title = "Metal Miner",
+					Description =
+						"It's in charge of the metal ore mining\nWhen you learn the skill, the rate increases by x1",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty, 10,
+							133,
+							0,
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 25,
+							164,
+							0,
+							new List<RequiredSkillStage>()),
+						[3] = new StageConf(string.Empty, 40,
+							200,
+							0,
+							new List<RequiredSkillStage>())
+					}
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.Sulfur,
+					ID = 0,
+					ShortName = string.Empty,
+					Image = "https://gspics.org/images/2020/09/02/xz4te.png",
+					Title = "Sulfure Miner",
+					Description =
+						"It's in charge of the sulfur ore mining\nWhen you learn the skill, the rate increases by x1",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty, 10,
+							133,
+							0,
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 25,
+							164,
+							0,
+							new List<RequiredSkillStage>()),
+						[3] = new StageConf(string.Empty, 40,
+							200,
+							0,
+							new List<RequiredSkillStage>())
+					}
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.Attack,
+					ID = 0,
+					ShortName = string.Empty,
+					Image = "https://gspics.org/images/2020/09/02/xzXza.png",
+					Title = "Attack",
+					Description =
+						"Changes the damage of any weapon\nWhen you learn the skill, you'll increase your damage by 15%.",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty, 20,
+							5,
+							0,
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 35,
+							10,
+							0,
+							new List<RequiredSkillStage>()),
+						[3] = new StageConf(string.Empty, 50,
+							15,
+							0,
+							new List<RequiredSkillStage>())
+					}
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.Secure,
+					ID = 0,
+					ShortName = string.Empty,
+					Image = "https://gspics.org/images/2020/09/02/xzAfi.png",
+					Title = "Secure",
+					Description =
+						"Changes the damage of any weapon\nWhen you learn the skill, you'll increase your protection by 15%.",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty, 20,
+							5,
+							0,
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 35,
+							10,
+							0,
+							new List<RequiredSkillStage>()),
+						[3] = new StageConf(string.Empty, 50,
+							15,
+							0,
+							new List<RequiredSkillStage>())
+					}
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.Regeneration,
+					ID = 0,
+					ShortName = string.Empty,
+					Image = "https://gspics.org/images/2020/09/02/xzGrO.png",
+					Title = "Regeneration",
+					Description =
+						"Speed health regeneration\nWhen you learn the skill, you'll increase the rate of regeneration by 50%.",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty, 10,
+							0.5f,
+							0,
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 15,
+							1,
+							0,
+							new List<RequiredSkillStage>()),
+						[3] = new StageConf(string.Empty, 20,
+							2,
+							0,
+							new List<RequiredSkillStage>())
+					}
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.Metabolism,
+					ID = 0,
+					ShortName = string.Empty,
+					Image = "https://gspics.org/images/2020/09/02/xzWdI.png",
+					Title = "Metabolism",
+					Description =
+						"Changes the restoration of thirst and hunger\nWhen you learn the skill, you will get calories and hydration",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty, 10, 0.5f, 0,
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 15, 1, 0,
+							new List<RequiredSkillStage>()),
+						[3] = new StageConf(string.Empty, 20, 2, 0,
+							new List<RequiredSkillStage>())
+					}
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.ComponentsRates,
+					ID = 0,
+					ShortName = string.Empty,
+					Image = "https://gspics.org/images/2020/09/02/xz15L.png",
+					Title = "Rates to components",
+					Description =
+						"Changes the rates of extractive components\nWhen we learn the skill, the components found will be x4",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty, 10, 2, 0,
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 15, 3, 0,
+							new List<RequiredSkillStage>()),
+						[3] = new StageConf(string.Empty, 20, 4, 0,
+							new List<RequiredSkillStage>())
+					}
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.StandUpChance,
+					ID = 0,
+					ShortName = string.Empty,
+					Image = "https://gspics.org/images/2020/09/02/xzTDD.png",
+					Title = "Increased chance to stand",
+					Description =
+						"It's a bigger chance to get up when you're wounded\nWhen you learn the skill, the chance goes up from standard 20% to 50%.",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty, 10, 30, 40,
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 15, 40, 50,
+							new List<RequiredSkillStage>()),
+						[3] = new StageConf(string.Empty, 20, 50, 60,
+							new List<RequiredSkillStage>())
+					}
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.CraftSpeed,
+					ID = 0,
+					ShortName = string.Empty,
+					Image = "https://i.imgur.com/fAti1Cj.png",
+					Title = "Craft Speed",
+					Description =
+						"Speeds up your craft.\nWhen you learn the skill, you can craft items in almost instant",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty, 10, 30, 0,
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 15, 40, 0,
+							new List<RequiredSkillStage>()),
+						[3] = new StageConf(string.Empty, 20, 50, 0,
+							new List<RequiredSkillStage>())
+					}
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.Kits,
+					ID = 0,
+					ShortName = string.Empty,
+					Image = "https://i.imgur.com/Log7sQR.png",
+					Title = "Kits Speed",
+					Description =
+						"Accelerates the delay between receiving kits",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty, 10, 30, 0,
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 15, 40, 0,
+							new List<RequiredSkillStage>()),
+						[3] = new StageConf(string.Empty, 20, 50, 0,
+							new List<RequiredSkillStage>())
+					}
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.FastOven,
+					ID = 0,
+					ShortName = string.Empty,
+					Image = "https://i.imgur.com/IifHk5l.png",
+					Title = "Fast Oven",
+					Description =
+						"Accelerating furnace melting",
+					Stages = new Dictionary<int, StageConf>()
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					ID = 0,
+					ShortName = string.Empty,
+					Type = SkillType.None,
+					Image = "https://i.imgur.com/RqdcAm0.png",
+					Title = "Sorting",
+					Description =
+						"With each stage, you discover new types of sorting",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty, 25, 0, 0, new List<string>(), new List<string>(),
+							new List<string>
+							{
+								"furnacesplitter.use"
+							},
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 40, 0, 0, new List<string>(), new List<string>(),
+							new List<string>
+							{
+								"activesort.use"
+							},
+							new List<RequiredSkillStage>())
+					}
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					ID = 1,
+					ShortName = string.Empty,
+					Type = SkillType.None,
+					Image = "https://i.imgur.com/S4xulmj.png",
+					Title = "Teleportation",
+					Description =
+						"You teleport faster with each stage",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty, 30, 0, 0, new List<string>(), new List<string>(),
+							new List<string>
+							{
+								"nteleportation.vip"
+							},
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 50, 0, 0, new List<string>(), new List<string>(),
+							new List<string>
+							{
+								"nteleportation.premium"
+							},
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 80, 0, 0, new List<string>(), new List<string>(),
+							new List<string>
+							{
+								"nteleportation.deluxe"
+							},
+							new List<RequiredSkillStage>())
+					}
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.Cloth,
+					ID = 0,
+					ShortName = string.Empty,
+					Image = "https://i.imgur.com/5fixMch.png",
+					Title = "Cannabis Picker",
+					Description =
+						"It's in charge of the collection of cloth\nWhen you learn the skill, the rate increases by x1",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty, 10, 133, 0,
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 25, 164, 0,
+							new List<RequiredSkillStage>()),
+						[3] = new StageConf(string.Empty, 40, 200, 0,
+							new List<RequiredSkillStage>())
+					}
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.Butcher,
+					ID = 0,
+					ShortName = string.Empty,
+					Image = "https://i.imgur.com/4WlHK7u.png",
+					Title = "Butcher",
+					Description =
+						"It's in charge of the animals prey\nWhen you learn the skill, the rate increases by x1",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty, 10, 133, 0,
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 25, 164, 0,
+							new List<RequiredSkillStage>()),
+						[3] = new StageConf(string.Empty, 40, 200, 0,
+							new List<RequiredSkillStage>())
+					}
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.Scrap,
+					ID = 0,
+					ShortName = string.Empty,
+					Image = "https://i.imgur.com/SEvG4EU.png",
+					Title = "Scrap",
+					Description =
+						"Changes scrap mining rates\nWhen we learn the skill, the components found will be x4",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty, 10, 2, 0,
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 15, 3, 0,
+							new List<RequiredSkillStage>()),
+						[3] = new StageConf(string.Empty, 20, 4, 0,
+							new List<RequiredSkillStage>())
+					}
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.RecyclerSpeed,
+					ID = 0,
+					ShortName = string.Empty,
+					Image = "https://i.imgur.com/31k3bM0.png",
+					Title = "Recycler Speed",
+					Description =
+						"Changes rate of recycling components\nWhen we learn the skill, the components will be recycler 2 times faster",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty, 10, 4, 0,
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 15, 3, 0,
+							new List<RequiredSkillStage>()),
+						[3] = new StageConf(string.Empty, 20, 2.5f, 0,
+							new List<RequiredSkillStage>())
+					}
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.TransferWipe,
+					ID = 0,
+					ShortName = string.Empty,
+					Image = "https://i.imgur.com/W23JZVo.png",
+					Title = "Transfer Wipe",
+					Description =
+						"Transferring Skills to the Next Wipe\nWhen we learn this skill, skills will be carried over to the next wipe",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty, 100, 0, 0,
+							new List<RequiredSkillStage>())
+					}
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.MixingTableSpeed,
+					ID = 0,
+					ShortName = string.Empty,
+					Image = "https://i.imgur.com/W6uHKeU.png",
+					Title = "Mixing Table Speed",
+					Description =
+						"Changes rate of mixing recipes\nWhen we learn the skill, the recipes will be mixed instantly",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty, 10, 0.8f, 0,
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 15, 0.45f, 0,
+							new List<RequiredSkillStage>()),
+						[3] = new StageConf(string.Empty, 20, 0f, 0,
+							new List<RequiredSkillStage>())
+					}
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.Gather,
+					ShortName = "blue.berry|red.berry|white.berry|black.berry",
+					ID = 3490432,
+					Image = "https://i.imgur.com/D8RsOS3.png",
+					Title = "Berry Hunter",
+					Description =
+						"It's in charge of picking blueberries\nWhen you learn the skill, the rate increases by x1",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty, 10,
+							133,
+							0,
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 25,
+							164,
+							0,
+							new List<RequiredSkillStage>()),
+						[3] = new StageConf(string.Empty, 40,
+							200,
+							0,
+							new List<RequiredSkillStage>())
+					}
+				},
+				new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.CraftRates,
+					ShortName = string.Empty,
+					ID = 0,
+					Image = "https://i.imgur.com/jnH4ELO.png",
+					Title = "Craft Rates",
+					Description =
+						"Item crafting rates\nIf you learn this skill, you will have an increased chance of getting an increased amount of an item when crafting",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty, 10,
+							140,
+							10,
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty, 25,
+							160,
+							20,
+							new List<RequiredSkillStage>()),
+						[3] = new StageConf(string.Empty, 40,
+							200,
+							30,
+							new List<RequiredSkillStage>())
+					}
+				}
+				/*new Skill
+				{
+					Enabled = true,
+					Permission = string.Empty,
+					Type = SkillType.RecyclerChance,
+					ShortName = string.Empty,
+					ID = 0,
+					Image = "https://i.imgur.com/jnH4ELO.png", //TODO: Change image
+					Title = "Recycler Change",
+					Description = //TODO: Change Description
+						"Item crafting rates\nIf you learn this skill, you will have an increased chance of getting an increased amount of an item when crafting",
+					Stages = new Dictionary<int, StageConf>
+					{
+						[1] = new StageConf(string.Empty,10,
+							30,
+							10,
+							new List<RequiredSkillStage>()),
+						[2] = new StageConf(string.Empty,25,
+							50,
+							20,
+							new List<RequiredSkillStage>()),
+						[3] = new StageConf(string.Empty,40,
+							70,
+							30,
+							new List<RequiredSkillStage>())
+					}
+				}*/
+			};
+
+			[JsonProperty(PropertyName = "Animals", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public List<string> Animals = new List<string>
+			{
+				"chicken.corpse",
+				"boar.corpse",
+				"bear.corpse",
+				"wolf.corpse",
+				"stag.corpse",
+				"polarbear.corpse"
+			};
+
+			[JsonProperty(PropertyName = "Ovens Black List", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public List<string> OvensBlackList = new List<string>
+			{
+				"entity shortnameprefab 1",
+				"entity shortnameprefab 2"
+			};
+
+			[JsonProperty(PropertyName = "Containers Black List",
+				ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public List<string> ContainersBlackList = new List<string>
+			{
+				"entity prefab name 1",
+				"entity prefab name 2"
+			};
+
+			[JsonProperty(PropertyName = "Blacklist for Attack skill",
+				ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public List<string> AttackBlackList = new List<string>
+			{
+				"entity prefab name 1",
+				"entity prefab name 2"
+			};
+
+			[JsonProperty(PropertyName = "Additional settings for the Fast Oven skill")]
+			public FastOvenSkill FastOven = new FastOvenSkill
+			{
+				Stages = new Dictionary<int, FastOvenStage>
+				{
+					[1] = new FastOvenStage
+					{
+						Permission = string.Empty,
+						Cost = 10,
+						Rates = new Dictionary<string, int>
+						{
+							{"ore", 1},
+							{"meat", 1},
+							{"hq.metal.ore", 1},
+							{"wood", 1},
+							{"*", 1}
+						},
+						RequiredSkillStages = new List<RequiredSkillStage>
+						{
+							new RequiredSkillStage
+							{
+								ID = 0,
+								Type = SkillType.CraftSpeed,
+								Stage = 1,
+								RequireSkill = false
+							}
+						}
+					},
+					[2] = new FastOvenStage
+					{
+						Permission = string.Empty,
+						Cost = 15,
+						Rates = new Dictionary<string, int>
+						{
+							{"ore", 2},
+							{"meat", 2},
+							{"hq.metal.ore", 2},
+							{"wood", 2},
+							{"*", 2}
+						},
+						RequiredSkillStages = new List<RequiredSkillStage>()
+					},
+					[3] = new FastOvenStage
+					{
+						Permission = string.Empty,
+						Cost = 20,
+						Rates = new Dictionary<string, int>
+						{
+							{"ore", 3},
+							{"meat", 3},
+							{"hq.metal.ore", 3},
+							{"wood", 3},
+							{"*", 3}
+						},
+						RequiredSkillStages = new List<RequiredSkillStage>()
+					}
+				}
+			};
+
+			[JsonProperty(PropertyName = "Additional settings for the Components Rates skill")]
+			public ComponentsRatesSkill ComponentsRates = new ComponentsRatesSkill
+			{
+				AllowedCategories = new List<ItemCategory>
+				{
+					ItemCategory.Component
+				},
+				AllowedItems = new List<string>
+				{
+					"targeting.computer",
+					"cctv.camera"
+				},
+				BlockList = new List<string>
+				{
+					"glue",
+					"techparts"
+				}
+			};
+
+			[JsonProperty(PropertyName = "Additional Buttons Settings")]
+			public AdditionalButtonsSettings AdditionalButtons = new AdditionalButtonsSettings
+			{
+				Buttons = new List<AdditionalButtonsSettings.AdditinalButton>
+				{
+					new AdditionalButtonsSettings.AdditinalButton(false, "https://i.imgur.com/C83Rprq.png", "leaders",
+						true)
+				},
+				UI = new AdditionalButtonsSettings.ButtonsUI
+				{
+					SideIndent = 45,
+					UpIndent = 5,
+					Size = 30,
+					Margin = 5
+				}
+			};
+
+			[JsonProperty(PropertyName = "Additional settings for the Transfer Wipe skill")]
+			public TransferWipeSkill TransferWipe = new TransferWipeSkill
+			{
+				ResetSigle = false
+			};
+
+			[JsonProperty(PropertyName = "Additional settings for the Craft Rates skill")]
+			public CraftRatesSkill CraftRates = new CraftRatesSkill
+			{
+				AllowedList = new List<string>
+				{
+					"gunpowder",
+					"lowgradefuel",
+					"rock"
+				}
+			};
+
+			[JsonProperty(PropertyName = "Broadcasting Settings")]
+			public Broadcasting Broadcasting = new Broadcasting
+			{
+				UseLearnSkill = true
+			};
+
+			[JsonProperty(PropertyName = "Use bonus mode for mining skills?")]
+			public bool UseBonusMode = false;
+
+			public VersionNumber Version;
+		}
+
+		private class Broadcasting
+		{
+			[JsonProperty(PropertyName = "Enable broadcast when learning a skill?")]
+			public bool UseLearnSkill;
+
+			public void LearnSkill(BasePlayer player, Skill skill, int stage)
+			{
+				if (!UseLearnSkill) return;
+
+				foreach (var target in BasePlayer.activePlayerList)
+				{
+					if (target.EqualNetID(player))
+						continue;
+
+					target.ChatMessage(_instance.Msg(target, BroadcastLearnSkill)
+						.Replace("{username}", player.displayName)
+						.Replace("{skill_name}", skill.Title)
+						.Replace("{stage}", stage.ToString()));
+				}
+			}
+		}
+
+		private class TransferWipeSkill
+		{
+			[JsonProperty(PropertyName = "Reset after a single use?")]
+			public bool ResetSigle;
+		}
+
+		private class ComponentsRatesSkill
+		{
+			[JsonProperty(PropertyName = "Allowed Categories",
+				ObjectCreationHandling = ObjectCreationHandling.Replace,
+				ItemConverterType = typeof(StringEnumConverter))]
+			public List<ItemCategory> AllowedCategories = new List<ItemCategory>();
+
+			[JsonProperty(PropertyName = "Allowed Items", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public List<string> AllowedItems = new List<string>();
+
+			[JsonProperty(PropertyName = "Components Block List (shortname)",
+				ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public List<string> BlockList = new List<string>();
+		}
+
+		private class AdditionalButtonsSettings
+		{
+			[JsonProperty(PropertyName = "Buttons", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public List<AdditinalButton> Buttons = new List<AdditinalButton>();
+
+			[JsonProperty(PropertyName = "Interface Settings")]
+			public ButtonsUI UI;
+
+			public class AdditinalButton
+			{
+				[JsonProperty(PropertyName = "Enabled")]
+				public bool Enabled;
+
+				[JsonProperty(PropertyName = "Image")] public string Image;
+
+				[JsonProperty(PropertyName = "Command")]
+				public string Command;
+
+				[JsonProperty(PropertyName = "Close Menu")]
+				public bool CloseMenu;
+
+				public AdditinalButton(bool enabled, string image, string command, bool closeMenu)
+				{
+					Enabled = enabled;
+					Image = image;
+					Command = command;
+					CloseMenu = closeMenu;
+				}
+			}
+
+			public class ButtonsUI
+			{
+				[JsonProperty(PropertyName = "Side Indent")]
+				public float SideIndent;
+
+				[JsonProperty(PropertyName = "Up Indent")]
+				public float UpIndent;
+
+				[JsonProperty(PropertyName = "Margin")]
+				public float Margin;
+
+				[JsonProperty(PropertyName = "Size")] public float Size;
+			}
+		}
+
+		private class BalanceIcon
+		{
+			[JsonProperty(PropertyName = "Offset Min Y")]
+			public float OffsetMinY;
+
+			[JsonProperty(PropertyName = "Offset Max Y")]
+			public float OffsetMaxY;
+
+			[JsonProperty(PropertyName = "Length")]
+			public float Length;
+		}
+
+		private class INotify
+		{
+			[JsonProperty(PropertyName = "Image Key")]
+			public string Image;
+
+			[JsonProperty(PropertyName = "Image Url")]
+			public string Url;
+
+			[JsonProperty(PropertyName = "Show Time")]
+			public float Delay;
+		}
+
+		private enum EconomyType
+		{
+			Plugin,
+			Item
+		}
+
+		private class EconomyConf
+		{
+			[JsonProperty(PropertyName = "Type (Plugin/Item)")] [JsonConverter(typeof(StringEnumConverter))]
+			public EconomyType Type;
+
+			[JsonProperty(PropertyName = "Plugin name")]
+			public string Plug;
+
+			[JsonProperty(PropertyName = "Balance add hook")]
+			public string AddHook;
+
+			[JsonProperty(PropertyName = "Balance remove hook")]
+			public string RemoveHook;
+
+			[JsonProperty(PropertyName = "Balance show hook")]
+			public string BalanceHook;
+
+			[JsonProperty(PropertyName = "ShortName")]
+			public string ShortName;
+
+			[JsonProperty(PropertyName = "Display Name (empty - default)")]
+			public string DisplayName;
+
+			[JsonProperty(PropertyName = "Skin")] public ulong Skin;
+
+			public double ShowBalance(BasePlayer player)
+			{
+				switch (Type)
+				{
+					case EconomyType.Plugin:
+					{
+						var plugin = _instance?.plugins?.Find(Plug);
+						if (plugin == null) return 0;
+
+						return Math.Round(Convert.ToDouble(plugin.Call(BalanceHook, player.userID)), 2);
+					}
+					case EconomyType.Item:
+					{
+						return ItemCount(GetAllItems(player), ShortName, Skin);
+					}
+					default:
+						return 0;
+				}
+			}
+
+			public void AddBalance(BasePlayer player, double amount)
+			{
+				switch (Type)
+				{
+					case EconomyType.Plugin:
+					{
+						var plugin = _instance?.plugins?.Find(Plug);
+						if (plugin == null) return;
+
+						switch (Plug)
+						{
+							case "Economics":
+								plugin.Call(AddHook, player.userID, amount);
+								break;
+							default:
+								plugin.Call(AddHook, player.userID, (int) amount);
+								break;
+						}
+
+						break;
+					}
+					case EconomyType.Item:
+					{
+						var am = (int) amount;
+
+						var item = ToItem(am);
+						if (item == null) return;
+
+						player.GiveItem(item);
+						break;
+					}
+				}
+			}
+
+			public bool RemoveBalance(BasePlayer player, double amount)
+			{
+				switch (Type)
+				{
+					case EconomyType.Plugin:
+					{
+						if (ShowBalance(player) < amount) return false;
+
+						var plugin = _instance?.plugins.Find(Plug);
+						if (plugin == null) return false;
+
+						switch (Plug)
+						{
+							case "Economics":
+								plugin.Call(RemoveHook, player.userID, amount);
+								break;
+							default:
+								plugin.Call(RemoveHook, player.userID, (int) amount);
+								break;
+						}
+
+						return true;
+					}
+					case EconomyType.Item:
+					{
+						var playerItems = GetAllItems(player);
+						var am = (int) amount;
+
+						if (ItemCount(playerItems, ShortName, Skin) < am) return false;
+
+						Take(playerItems, ShortName, Skin, am);
+						return true;
+					}
+					default:
+						return false;
+				}
+			}
+
+			private Item ToItem(int amount)
+			{
+				var item = ItemManager.CreateByName(ShortName, amount, Skin);
+				if (item == null)
+				{
+					Debug.LogError($"Error creating item with ShortName: '{ShortName}'");
+					return null;
+				}
+
+				if (!string.IsNullOrEmpty(DisplayName)) item.name = DisplayName;
+
+				return item;
+			}
+
+			private static Item[] GetAllItems(BasePlayer player)
+			{
+				var items = new List<Item>();
+				if (player?.inventory == null) return items.ToArray();
+				
+				if (player.inventory.containerMain?.itemList != null)
+					items.AddRange(player.inventory.containerMain.itemList);
+				if (player.inventory.containerBelt?.itemList != null)
+					items.AddRange(player.inventory.containerBelt.itemList);
+				if (player.inventory.containerWear?.itemList != null)
+					items.AddRange(player.inventory.containerWear.itemList);
+					
+				return items.ToArray();
+			}
+
+			private int ItemCount(Item[] items, string shortname, ulong skin)
+			{
+				return items.Where(item =>
+						item != null && item.info.shortname == shortname && !item.isBroken && (skin == 0 || item.skin == skin))
+					.Sum(item => item.amount);
+			}
+
+			private void Take(IEnumerable<Item> itemList, string shortname, ulong skinId, int iAmount)
+			{
+				var num1 = 0;
+				if (iAmount == 0) return;
+
+				var list = Pool.GetList<Item>();
+
+				foreach (var item in itemList)
+				{
+					if (item.info.shortname != shortname ||
+					    (skinId != 0 && item.skin != skinId) || item.isBroken) continue;
+
+					var num2 = iAmount - num1;
+					if (num2 <= 0) continue;
+					if (item.amount > num2)
+					{
+						item.MarkDirty();
+						item.amount -= num2;
+						break;
+					}
+
+					if (item.amount <= num2)
+					{
+						num1 += item.amount;
+						list.Add(item);
+					}
+
+					if (num1 == iAmount)
+						break;
+				}
+
+				foreach (var obj in list)
+					obj.RemoveFromContainer();
+
+				Pool.FreeList(ref list);
+			}
+		}
+
+		private class CraftRatesSkill
+		{
+			[JsonProperty(PropertyName = "Allowed List", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public List<string> AllowedList = new List<string>();
+		}
+
+		private class FastOvenSkill : ISkill
+		{
+			[JsonProperty(PropertyName = "Work with campfires")]
+			public bool WorkWithCampfires = true;
+
+			[JsonProperty(PropertyName = "Charcoal multiplier")]
+			public float CharcoalMultiplier = 2;
+
+			[JsonProperty(PropertyName = "Stop burning food")]
+			public bool StopBurningFood = true;
+
+			[JsonProperty(PropertyName = "Stages", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public Dictionary<int, FastOvenStage> Stages;
+
+			public FastOvenStage GetStage(BasePlayer player)
+			{
+				if (player == null) return null;
+
+				var skillData = PlayerData.GetOrLoad(player.UserIDString)?.GetSkillData(SkillType.FastOven);
+				if (skillData == null) return null;
+
+				FastOvenStage stage;
+				return Stages.TryGetValue(skillData.Stage, out stage) ? stage : null;
+			}
+
+			public Dictionary<int, IStage> GetStages(string userid)
+			{
+				return Stages.Where(x => x.Value.HasAccess(userid)).ToDictionary(x => x.Key, y => (IStage) y.Value);
+			}
+		}
+
+		private class FastOvenStage : IStage
+		{
+			[JsonProperty(PropertyName = "Permission (ex: skills.vip)")]
+			public string Permission;
+
+			[JsonProperty(PropertyName = "Cost")] public float Cost;
+
+			[JsonProperty(PropertyName = "Rates", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public Dictionary<string, int> Rates;
+
+			[JsonProperty(PropertyName = "Required skill stages",
+				ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public List<RequiredSkillStage> RequiredSkillStages;
+
+			public float GetCost()
+			{
+				return Cost;
+			}
+
+			public bool HasAccess(string userid)
+			{
+				return _config.SkillPanel.ShowAllStages || HasPermissions(userid);
+			}
+
+			public bool HasPermissions(string userid)
+			{
+				return string.IsNullOrEmpty(Permission) ||
+				       _instance.permission.UserHasPermission(userid, Permission);
+			}
+
+			public List<RequiredSkillStage> GetRequiredSkillStages()
+			{
+				return RequiredSkillStages;
+			}
+		}
+
+		private class Skill : ISkill
+		{
+			[JsonProperty(PropertyName = "Enabled")]
+			public bool Enabled;
+
+			[JsonProperty(PropertyName = "Permission")]
+			public string Permission = string.Empty;
+
+			[JsonProperty(PropertyName = "Type")] [JsonConverter(typeof(StringEnumConverter))]
+			public SkillType Type;
+
+			[JsonProperty(PropertyName = "ID (for None)")]
+			public int ID;
+
+			[JsonProperty(PropertyName = "Image")] public string Image;
+
+			[JsonProperty(PropertyName = "Title")] public string Title;
+
+			[JsonProperty(PropertyName = "Description")]
+			public string Description;
+
+			[JsonProperty(PropertyName = "Shortname")]
+			public string ShortName;
+
+			[JsonProperty(PropertyName = "Stages", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public Dictionary<int, StageConf> Stages;
+
+			public Dictionary<int, IStage> GetStages(string userid)
+			{
+				return Stages.Where(x => x.Value.HasAccess(userid)).ToDictionary(x => x.Key, y => (IStage) y.Value);
+			}
+		}
+
+		private class RequiredSkillStage
+		{
+			[JsonProperty(PropertyName = "Type")] [JsonConverter(typeof(StringEnumConverter))]
+			public SkillType Type;
+
+			[JsonProperty(PropertyName = "ID")] public int ID;
+
+			[JsonProperty(PropertyName = "Stage")] public int Stage;
+
+			[JsonProperty(PropertyName =
+				"Require the presence of this skill? (otherwise only the stage will be checked)")]
+			public bool RequireSkill;
+
+			public bool? Has(BasePlayer player)
+			{
+				var skill = _config.Skills.Find(x => x.Type == Type && x.ID == ID);
+				if (skill == null) return null;
+
+				var dataSkill = PlayerData.GetOrLoad(player.UserIDString)?.GetSkillData(Type, ID);
+				if (dataSkill == null)
+					return RequireSkill ? false : (bool?) null;
+
+				return dataSkill.Stage >= Stage;
+			}
+		}
+
+		private class StageConf : IStage
+		{
+			[JsonProperty(PropertyName = "Permission (ex: skills.vip)")]
+			public string Permission;
+
+			[JsonProperty(PropertyName = "Cost")] public float Cost;
+
+			[JsonProperty(PropertyName =
+				"Value [metabolism - value, for everyone else %]")]
+			public float Value;
+
+			[JsonProperty(PropertyName = "Value 2")]
+			public float Value2;
+
+			[JsonProperty(PropertyName = "Commands", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public List<string> Commands;
+
+			[JsonProperty(PropertyName = "Groups", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public List<string> Groups;
+
+			[JsonProperty(PropertyName = "Permissions", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public List<string> Permissions;
+
+			[JsonProperty(PropertyName = "Required skill stages",
+				ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public List<RequiredSkillStage> RequiredSkillStages;
+
+			public StageConf(string permission = "", float cost = 0f, float value = 0f, float value2 = 0f,
+				List<RequiredSkillStage> requiredSkillStages = null)
+			{
+				Permission = permission;
+				Cost = cost;
+				Value = value;
+				Value2 = value2;
+				RequiredSkillStages = requiredSkillStages ?? new List<RequiredSkillStage>();
+				Commands = new List<string>();
+				Groups = new List<string>();
+				Permissions = new List<string>();
+			}
+
+			[JsonConstructor]
+			public StageConf(string permission, float cost, float value, float value2, List<string> commands,
+				List<string> groups,
+				List<string> permissions, List<RequiredSkillStage> requiredSkillStages)
+			{
+				Permission = permission;
+				Cost = cost;
+				Value = value;
+				Value2 = value2;
+				Commands = commands;
+				Groups = groups;
+				Permissions = permissions;
+				RequiredSkillStages = requiredSkillStages;
+			}
+
+			public bool HasAccess(string userid)
+			{
+				return _config.SkillPanel.ShowAllStages || HasPermissions(userid);
+			}
+
+			public bool HasPermissions(string userid)
+			{
+				return string.IsNullOrEmpty(Permission) ||
+				       _instance.permission.UserHasPermission(userid, Permission);
+			}
+
+			public float GetCost()
+			{
+				return Cost;
+			}
+
+			public List<RequiredSkillStage> GetRequiredSkillStages()
+			{
+				return RequiredSkillStages;
+			}
+		}
+
+		private class SkillPanel
+		{
+			[JsonProperty(PropertyName = "Background")]
+			public SIPanel Background;
+
+			[JsonProperty(PropertyName = "Image")] public InterfacePosition Image;
+
+			[JsonProperty(PropertyName = "Title")] public IText Title;
+
+			[JsonProperty(PropertyName = "Description")]
+			public IText Description;
+
+			[JsonProperty(PropertyName = "Button")]
+			public IButton Button;
+
+			[JsonProperty(PropertyName = "Description Button")]
+			public DescriptionButton DescriptionButton;
+
+			[JsonProperty(PropertyName = "Cost")] public IText Cost;
+
+			[JsonProperty(PropertyName = "Add to cost")]
+			public string AddCost;
+
+			[JsonProperty(PropertyName = "Enable Add to cost (image)")]
+			public bool EnableCostImage;
+
+			[JsonProperty(PropertyName = "Add to cost (image)")]
+			public IPanel AddCostImage;
+
+			[JsonProperty(PropertyName = "Stages")]
+			public IProgress Stages;
+
+			[JsonProperty(PropertyName = "Count On Page")]
+			public int Count;
+
+			[JsonProperty(PropertyName = "Height")]
+			public float Height;
+
+			[JsonProperty(PropertyName = "Width")] public float Width;
+
+			[JsonProperty(PropertyName = "Margin")]
+			public float Margin;
+
+			[JsonProperty(PropertyName = "Show all stages of skills")]
+			public bool ShowAllStages;
+
+			public void Get(ref CuiElementContainer container,
+				PlayerData data,
+				string layer,
+				int page,
+				string parent,
+				int index,
+				BasePlayer player,
+				Skill skill,
+				float oMinX, float oMinY, float oMaxX, float oMaxY,
+				bool hasBypass)
+			{
+				Background?.Get(ref container, parent, parent + $".Skill.{index}", oMinX, oMinY, oMaxX, oMaxY);
+
+				container.Add(new CuiElement
+				{
+					Parent = parent + $".Skill.{index}",
+					Components =
+					{
+						new CuiRawImageComponent
+							{Png = _instance?.ImageLibrary?.Call<string>("GetImage", skill.Image)},
+						new CuiRectTransformComponent
+						{
+							AnchorMin = Image.AnchorMin, AnchorMax = Image.AnchorMax, OffsetMin = Image.OffsetMin,
+							OffsetMax = Image.OffsetMax
+						}
+					}
+				});
+
+				Title?.Get(ref container, parent + $".Skill.{index}", parent + $".Skill.{index}.Title", skill.Title);
+
+				if (data?.CanSeeDescription(skill) == true)
+					Description?.Get(ref container, parent + $".Skill.{index}", parent + $".Skill.{index}.Desciprition",
+						skill.Description);
+
+				var cost = _instance?.GetNextPrice(player, skill) ?? -1;
+
+				Button?.Get(ref container, player, parent + $".Skill.{index}", parent + $".Skill.{index}.Upgrade.Btn",
+					$"UI_Skills upgrade {skill.Type} {page} {layer} {skill.ID}", "", cost > 0);
+
+				if (DescriptionButton.Enabled)
+					DescriptionButton?.Get(ref container, player, parent + $".Skill.{index}",
+						parent + $".Skill.{index}.Description.Btn",
+						$"UI_Skills changedescview {skill.Type} {page} {layer} {skill.ID}");
+
+				if (cost > 0)
+				{
+					Cost?.Get(ref container, parent + $".Skill.{index}", parent + $".Skill.{index}.Cost",
+						$"{cost}{AddCost}");
+
+					if (EnableCostImage)
+						AddCostImage?.Get(ref container, parent + $".Skill.{index}");
+				}
+
+				#region Stages
+
+				container.Add(new CuiPanel
+					{
+						RectTransform =
+						{
+							AnchorMin = Stages.AnchorMin, AnchorMax = Stages.AnchorMax,
+							OffsetMin = Stages.OffsetMin, OffsetMax = Stages.OffsetMax
+						},
+						Image = {Color = "0 0 0 0"}
+					}, parent + $".Skill.{index}", parent + $".Skill.{index}.Stages");
+
+				var skillData = PlayerData.GetOrCreate(player.UserIDString)?.Skills
+					?.FirstOrDefault(x => x.Type == skill.Type && x.ID == skill.ID);
+
+				var xSwitch = 0f;
+				foreach (var stage in GetSkillStages(skill, player.UserIDString).Keys)
+				{
+					var color =
+						hasBypass ? Stages.AColor
+						: skillData != null && stage <= skillData.Stage ? Stages.AColor : Stages.DColor;
+
+					container.Add(new CuiPanel
+						{
+							RectTransform =
+							{
+								AnchorMin = "0 0", AnchorMax = "0 0",
+								OffsetMin = $"{xSwitch} 0", OffsetMax = $"{xSwitch + Stages.Width} {Stages.Height}"
+							},
+							Image = {Color = color.Get()}
+						}, parent + $".Skill.{index}.Stages", parent + $".Skill.{index}.Stages.{stage}");
+
+					xSwitch += Stages.Width + Stages.Margin;
+				}
+
+				#endregion
+			}
+		}
+
+		private class IProgress : InterfacePosition
+		{
+			[JsonProperty(PropertyName = "Height")]
+			public float Height;
+
+			[JsonProperty(PropertyName = "Weidth")]
+			public float Width;
+
+			[JsonProperty(PropertyName = "Margin")]
+			public float Margin;
+
+			[JsonProperty(PropertyName = "Active Color")]
+			public IColor AColor;
+
+			[JsonProperty(PropertyName = "No Active Color")]
+			public IColor DColor;
+		}
+
+		private class IButton : InterfacePosition
+		{
+			[JsonProperty(PropertyName = "Color")] public IColor AColor;
+
+			[JsonProperty(PropertyName = "No Active Color")]
+			public IColor DColor;
+
+			[JsonProperty(PropertyName = "Text Setting")]
+			public IText TextUi;
+
+			public void Get(ref CuiElementContainer container, BasePlayer player, string parent, string name = null,
+				string cmd = "",
+				string close = "", bool color = true)
+			{
+				if (string.IsNullOrEmpty(name))
+					name = CuiHelper.GetGuid();
+
+				container.Add(new CuiPanel
+				{
+					RectTransform =
+					{
+						AnchorMin = AnchorMin, AnchorMax = AnchorMax, OffsetMin = OffsetMin,
+						OffsetMax = OffsetMax
+					},
+					Image = {Color = color ? AColor.Get() : DColor.Get()}
+				}, parent, name);
+
+				TextUi?.Get(ref container, name, null, _instance.Msg(Upgrade, player.UserIDString));
+
+				container.Add(new CuiButton
+				{
+					RectTransform = {AnchorMin = "0 0", AnchorMax = "1 1"},
+					Text = {Text = ""},
+					Button =
+					{
+						Command = cmd,
+						Close = close,
+						Color = "0 0 0 0"
+					}
+				}, name);
+			}
+		}
+
+		private class DescriptionButton : InterfacePosition
+		{
+			[JsonProperty(PropertyName = "Enabled")]
+			public bool Enabled;
+
+			[JsonProperty(PropertyName = "Color")] public IColor AColor;
+
+			[JsonProperty(PropertyName = "No Active Color")]
+			public IColor DColor;
+
+			[JsonProperty(PropertyName = "Text Setting")]
+			public IText TextUi;
+
+			public void Get(ref CuiElementContainer container, BasePlayer player, string parent, string name = null,
+				string cmd = "", bool active = true)
+			{
+				if (string.IsNullOrEmpty(name))
+					name = CuiHelper.GetGuid();
+
+				container.Add(new CuiPanel
+				{
+					RectTransform =
+					{
+						AnchorMin = AnchorMin, AnchorMax = AnchorMax, OffsetMin = OffsetMin,
+						OffsetMax = OffsetMax
+					},
+					Image = {Color = active ? AColor.Get() : DColor.Get()}
+				}, parent, name);
+
+				TextUi?.Get(ref container, name, null, _instance.Msg(DescriptionBtn, player.UserIDString));
+
+				container.Add(new CuiButton
+				{
+					RectTransform = {AnchorMin = "0 0", AnchorMax = "1 1"},
+					Text = {Text = ""},
+					Button =
+					{
+						Command = cmd,
+						Color = "0 0 0 0"
+					}
+				}, name);
+			}
+		}
+
+		private class SIPanel
+		{
+			[JsonProperty(PropertyName = "Image")] public string Image;
+
+			[JsonProperty(PropertyName = "Color")] public IColor Color;
+
+			[JsonProperty(PropertyName = "Save Image Color")]
+			public bool isRaw;
+
+			[JsonProperty(PropertyName = "Sprite")]
+			public string Sprite;
+
+			[JsonProperty(PropertyName = "Material")]
+			public string Material;
+
+			[JsonProperty(PropertyName = "Height Correction")]
+			public float HeightCorrect;
+
+			public void Get(ref CuiElementContainer container, string parent = "Hud", string name = null,
+				float oMinX = 0, float oMinY = 0, float oMaxX = 0, float oMaxY = 0)
+			{
+				if (string.IsNullOrEmpty(name))
+					name = CuiHelper.GetGuid();
+
+				if (isRaw)
+					container.Add(new CuiElement
+					{
+						Name = name,
+						Parent = parent,
+						Components =
+						{
+							new CuiRawImageComponent
+							{
+								Png = !string.IsNullOrEmpty(Image)
+									? _instance.ImageLibrary?.Call<string>("GetImage", Image)
+									: null,
+								Color = Color.Get(),
+								Material = Material,
+								Sprite = !string.IsNullOrEmpty(Sprite) ? Sprite : "Assets/Icons/rust.png"
+							},
+							new CuiRectTransformComponent
+							{
+								AnchorMin = "0.5 0.5", AnchorMax = "0.5 0.5",
+								OffsetMin = $"{oMinX} {oMinY + HeightCorrect}",
+								OffsetMax = $"{oMaxX} {oMaxY + HeightCorrect}"
+							}
+						}
+					});
+				else
+					container.Add(new CuiPanel
+					{
+						RectTransform =
+						{
+							AnchorMin = "0.5 0.5", AnchorMax = "0.5 0.5",
+							OffsetMin = $"{oMinX} {oMinY + HeightCorrect}",
+							OffsetMax = $"{oMaxX} {oMaxY + HeightCorrect}"
+						},
+						Image =
+						{
+							Png = !string.IsNullOrEmpty(Image)
+								? _instance.ImageLibrary?.Call<string>("GetImage", Image)
+								: null,
+							Color = Color.Get(),
+							Sprite =
+								!string.IsNullOrEmpty(Sprite) ? Sprite : "Assets/Content/UI/UI.Background.Tile.psd",
+							Material = !string.IsNullOrEmpty(Material) ? Material : "Assets/Icons/IconMaterial.mat"
+						}
+					}, parent, name);
+			}
+		}
+
+		private class InterfacePosition
+		{
+			public string AnchorMin;
+
+			public string AnchorMax;
+
+			public string OffsetMin;
+
+			public string OffsetMax;
+		}
+
+		private class IColor
+		{
+			[JsonProperty(PropertyName = "HEX")] public string HEX;
+
+			[JsonProperty(PropertyName = "Opacity (0 - 100)")]
+			public float Alpha;
+
+			public string Get()
+			{
+				if (string.IsNullOrEmpty(HEX)) HEX = "#FFFFFF";
+
+				var str = HEX.Trim('#');
+				if (str.Length != 6) throw new Exception(HEX);
+				var r = byte.Parse(str.Substring(0, 2), NumberStyles.HexNumber);
+				var g = byte.Parse(str.Substring(2, 2), NumberStyles.HexNumber);
+				var b = byte.Parse(str.Substring(4, 2), NumberStyles.HexNumber);
+
+				return $"{(double) r / 255} {(double) g / 255} {(double) b / 255} {Alpha / 100}";
+			}
+
+			public IColor(string hex, float alpha)
+			{
+				HEX = hex;
+				Alpha = alpha;
+			}
+		}
+
+		private class IPanel : InterfacePosition
+		{
+			[JsonProperty(PropertyName = "Image")] public string Image;
+
+			[JsonProperty(PropertyName = "Color")] public IColor Color;
+
+			[JsonProperty(PropertyName = "Save Image Color")]
+			public bool isRaw;
+
+			[JsonProperty(PropertyName = "Sprite")]
+			public string Sprite;
+
+			[JsonProperty(PropertyName = "Material")]
+			public string Material;
+
+			public void Get(ref CuiElementContainer container, string parent = "Hud", string name = null,
+				bool cursor = false)
+			{
+				if (string.IsNullOrEmpty(name))
+					name = CuiHelper.GetGuid();
+
+				if (isRaw)
+				{
+					var element = new CuiElement
+					{
+						Name = name,
+						Parent = parent,
+						Components =
+						{
+							new CuiRawImageComponent
+							{
+								Png = !string.IsNullOrEmpty(Image)
+									? _instance.ImageLibrary?.Call<string>("GetImage", Image)
+									: null,
+								Color = Color.Get(),
+								Material = Material,
+								Sprite = !string.IsNullOrEmpty(Sprite) ? Sprite : "Assets/Icons/rust.png"
+							},
+							new CuiRectTransformComponent
+							{
+								AnchorMin = AnchorMin, AnchorMax = AnchorMax, OffsetMin = OffsetMin,
+								OffsetMax = OffsetMax
+							}
+						}
+					};
+
+					if (cursor) element.Components.Add(new CuiNeedsCursorComponent());
+
+					container.Add(element);
+				}
+				else
+				{
+					container.Add(new CuiPanel
+					{
+						RectTransform =
+						{
+							AnchorMin = AnchorMin, AnchorMax = AnchorMax, OffsetMin = OffsetMin, OffsetMax = OffsetMax
+						},
+						Image =
+						{
+							Png = !string.IsNullOrEmpty(Image)
+								? _instance.ImageLibrary?.Call<string>("GetImage", Image)
+								: null,
+							Color = Color.Get(),
+							Sprite =
+								!string.IsNullOrEmpty(Sprite) ? Sprite : "Assets/Content/UI/UI.Background.Tile.psd",
+							Material = !string.IsNullOrEmpty(Material) ? Material : "Assets/Icons/IconMaterial.mat"
+						},
+						CursorEnabled = cursor
+					}, parent, name);
+				}
+			}
+		}
+
+		private class IText : InterfacePosition
+		{
+			[JsonProperty(PropertyName = "Font Size")]
+			public int FontSize;
+
+			[JsonProperty(PropertyName = "Font")] public string Font;
+
+			[JsonProperty(PropertyName = "Align")] [JsonConverter(typeof(StringEnumConverter))]
+			public TextAnchor Align;
+
+			[JsonProperty(PropertyName = "Text Color")]
+			public IColor Color;
+
+			public void Get(ref CuiElementContainer container, string parent = "Hud", string name = null,
+				string text = "", bool enableIcon = false)
+			{
+				if (string.IsNullOrEmpty(name))
+					name = CuiHelper.GetGuid();
+
+				container.Add(new CuiLabel
+				{
+					RectTransform =
+					{
+						AnchorMin = AnchorMin,
+						AnchorMax = AnchorMax,
+						OffsetMin = OffsetMin,
+						OffsetMax = OffsetMax
+					},
+					Text =
+					{
+						Text = $"{text}", Align = Align, FontSize = FontSize, Color = Color.Get(),
+						Font = Font
+					}
+				}, parent, name);
+
+				if (enableIcon)
+				{
+					var length = text.Length * FontSize * 0.225f;
+
+					container.Add(new CuiElement
+					{
+						Parent = parent,
+						Components =
+						{
+							new CuiRawImageComponent
+							{
+								Png = _instance.ImageLibrary?.Call<string>("GetImage",
+									_config.SkillPanel.AddCostImage.Image)
+							},
+							new CuiRectTransformComponent
+							{
+								AnchorMin = AnchorMin,
+								AnchorMax = AnchorMax,
+								OffsetMin = $"{length} {_config.BalanceIcon.OffsetMinY}",
+								OffsetMax = $"{length + _config.BalanceIcon.Length} {_config.BalanceIcon.OffsetMaxY}"
+							}
+						}
+					});
+				}
+			}
+		}
+
+		protected override void LoadConfig()
+		{
+			base.LoadConfig();
+			try
+			{
+				_config = Config.ReadObject<Configuration>();
+				if (_config == null) throw new JsonException();
+
+				if (MaybeUpdateConfig(_config))
+				{
+					PrintWarning("Configuration appears to be outdated; updating and saving");
+					SaveConfig();
+				}
+
+				if (_config.Version < Version)
+					UpdateConfigValues();
+			}
+			catch
+			{
+				PrintError("Your configuration file contains an error. Using default configuration values.");
+				LoadDefaultConfig();
+			}
+		}
+
+		protected override void SaveConfig()
+		{
+			Config.WriteObject(_config, true);
+		}
+
+		protected override void LoadDefaultConfig()
+		{
+			_config = new Configuration();
+		}
+
+		#region Updater
+
+		internal class SerializableConfiguration
+		{
+			public string ToJson()
+			{
+				return JsonConvert.SerializeObject(this);
+			}
+
+			public Dictionary<string, object> ToDictionary()
+			{
+				return JsonHelper.Deserialize(ToJson()) as Dictionary<string, object>;
+			}
+		}
+
+		private static class JsonHelper
+		{
+			public static object Deserialize(string json)
+			{
+				return ToObject(JToken.Parse(json));
+			}
+
+			private static object ToObject(JToken token)
+			{
+				switch (token.Type)
+				{
+					case JTokenType.Object:
+						return token.Children<JProperty>()
+							.ToDictionary(prop => prop.Name, prop => ToObject(prop.Value));
+					case JTokenType.Array:
+						return token.Select(ToObject).ToList();
+
+					default:
+						return ((JValue) token).Value;
+				}
+			}
+		}
+
+		private bool MaybeUpdateConfig(SerializableConfiguration config)
+		{
+			var currentWithDefaults = config.ToDictionary();
+			var currentRaw = Config.ToDictionary(x => x.Key, x => x.Value);
+			return MaybeUpdateConfigDict(currentWithDefaults, currentRaw);
+		}
+
+		private bool MaybeUpdateConfigDict(Dictionary<string, object> currentWithDefaults,
+			Dictionary<string, object> currentRaw)
+		{
+			var changed = false;
+
+			foreach (var key in currentWithDefaults.Keys)
+			{
+				object currentRawValue;
+				if (currentRaw.TryGetValue(key, out currentRawValue))
+				{
+					var defaultDictValue = currentWithDefaults[key] as Dictionary<string, object>;
+					var currentDictValue = currentRawValue as Dictionary<string, object>;
+
+					if (defaultDictValue != null)
+					{
+						if (currentDictValue == null)
+						{
+							currentRaw[key] = currentWithDefaults[key];
+							changed = true;
+						}
+						else if (MaybeUpdateConfigDict(defaultDictValue, currentDictValue))
+						{
+							changed = true;
+						}
+					}
+				}
+				else
+				{
+					currentRaw[key] = currentWithDefaults[key];
+					changed = true;
+				}
+			}
+
+			return changed;
+		}
+
+		private void UpdateConfigValues()
+		{
+			PrintWarning("Config update detected! Updating config values...");
+
+			if (_config.Version == default(VersionNumber))
+			{
+				if (_config.Version < new VersionNumber(1, 27, 0))
+					_config.Skills.ForEach(skill => skill.Enabled = true);
+			}
+			else
+			{
+				if (_config.Version < new VersionNumber(1, 31, 0))
+				{
+					_config.Skills.ForEach(skill =>
+					{
+						foreach (var stage in skill.Stages)
+							stage.Value.RequiredSkillStages = new List<RequiredSkillStage>();
+					});
+
+					foreach (var stage in _config.FastOven.Stages)
+						stage.Value.RequiredSkillStages = new List<RequiredSkillStage>();
+
+					StartConvertOldData();
+				}
+
+				if (_config.Version < new VersionNumber(1, 31, 12))
+				{
+					_config.Skills.ForEach(skill => skill.ShortName = string.Empty);
+
+					_config.Skills.Add(new Skill
+					{
+						Enabled = false,
+						Permission = string.Empty,
+						Type = SkillType.Gather,
+						ShortName = "blue.berry",
+						ID = 3490432,
+						Image = "https://i.imgur.com/D8RsOS3.png",
+						Title = "Berry Hunter",
+						Description =
+							"It's in charge of picking blueberries\nWhen you learn the skill, the rate increases by x1",
+						Stages = new Dictionary<int, StageConf>
+						{
+							[1] = new StageConf(string.Empty,
+								10,
+								133,
+								0,
+								new List<RequiredSkillStage>()),
+							[2] = new StageConf(string.Empty, 25,
+								164,
+								0,
+								new List<RequiredSkillStage>()),
+							[3] = new StageConf(string.Empty, 40,
+								200,
+								0,
+								new List<RequiredSkillStage>())
+						}
+					});
+
+					_config.Skills.Add(new Skill
+					{
+						Enabled = false,
+						Permission = string.Empty,
+						Type = SkillType.CraftRates,
+						ShortName = string.Empty,
+						ID = 0,
+						Image = "https://i.imgur.com/jnH4ELO.png",
+						Title = "Craft Rates",
+						Description =
+							"Item crafting rates\nIf you learn this skill, you will have an increased chance of getting an increased amount of an item when crafting",
+						Stages = new Dictionary<int, StageConf>
+						{
+							[1] = new StageConf(string.Empty, 10,
+								140,
+								10,
+								new List<RequiredSkillStage>()),
+							[2] = new StageConf(string.Empty, 25,
+								160,
+								20,
+								new List<RequiredSkillStage>()),
+							[3] = new StageConf(string.Empty, 40,
+								200,
+								30,
+								new List<RequiredSkillStage>())
+						}
+					});
+				}
+
+				if (_config.Version < new VersionNumber(1, 31, 13))
+				{
+					_config.Skills.ForEach(skill =>
+					{
+						foreach (var stage in skill.Stages) stage.Value.Permission = string.Empty;
+					});
+
+					foreach (var stage in _config.FastOven.Stages) stage.Value.Permission = string.Empty;
+				}
+			}
+
+			_config.Version = Version;
+			PrintWarning("Config update completed!");
+			SaveConfig();
+		}
+
+		#endregion
+
+		#endregion
+
+		#region Hooks
+
+		private void Init()
+		{
+			_instance = this;
+
+			if (_config.StoreContainers)
+				LoadContainers();
+
+			LoadSkills();
+
+			RegisterPermissions();
+
+			UnsubscribeHooks();
+		}
+
+		private void OnServerInitialized()
+		{
+			Notifications?.Call("AddImage", _config.MaxLevel.Image, _config.MaxLevel.Url);
+
+			Notifications?.Call("AddImage", _config.NotMoney.Image, _config.NotMoney.Url);
+
+			LoadImages();
+
+			CheckOnDuplicates();
+
+			RegisterCommands();
+
+			SubscribeHooks();
+
+			LoadPlayers();
+		}
+
+		private void OnServerSave()
+		{
+			timer.In(Random.Range(2f, 7f), () =>
+			{
+				PlayerData.Save();
+				CleanupOvenDictionary();
+			});
+		}
+
+		private void Unload()
+		{
+			foreach (var player in BasePlayer.activePlayerList)
+			{
+				CuiHelper.DestroyUi(player, Layer);
+
+				PlayerData.SaveAndUnload(player.UserIDString);
+			}
+
+			_recoverPlayers.Values.ToList().ForEach(component =>
+			{
+				if (component != null)
+					component.Kill(true);
+			});
+
+			if (_metabolismEngine != null)
+				_metabolismEngine.Kill();
+
+			if (_config.StoreContainers)
+				SaveContainers();
+
+			_instance = null;
+			_config = null;
+		}
+
+		private void OnNewSave()
+		{
+			_containers?.Clear();
+
+			if (_config.StoreContainers)
+				SaveContainers();
+		}
+
+		#region Players
+
+		private void OnPlayerConnected(BasePlayer player)
+		{
+			if (player == null || !player.userID.IsSteamId()) return;
+
+			try
+			{
+				if (_metabolismEngine != null)
+					_metabolismEngine.AddOrUpdate(player);
+			}
+			catch (Exception ex)
+			{
+				PrintError($"OnPlayerConnected error: {ex.Message}");
+			}
+		}
+
+		private void OnPlayerDisconnected(BasePlayer player)
+		{
+			if (player == null || !player.userID.IsSteamId()) return;
+
+			if (_metabolismEngine != null)
+				_metabolismEngine.Remove(player);
+
+			PlayerData.SaveAndUnload(player.UserIDString);
+		}
+
+		#endregion
+
+		#region Skills
+
+		#region Gather
+
+		private void OnCollectiblePickup(CollectibleEntity collectible, BasePlayer player)
+		{
+			if (collectible == null || collectible.itemList == null) return;
+
+			foreach (var item in collectible.itemList) OnCollect(player, item);
+		}
+
+		private void OnGrowableGathered(GrowableEntity plant, Item item, BasePlayer player)
+		{
+			OnGather(player, item);
+		}
+
+		private void OnDispenserBonus(ResourceDispenser dispenser, BasePlayer player, Item item)
+		{
+			OnGather(player, item, dispenser);
+		}
+
+		private void OnDispenserGather(ResourceDispenser dispenser, BasePlayer player, Item item)
+		{
+			OnGather(player, item, dispenser);
+		}
+
+		#endregion
+
+		#region Damage
+
+		private void OnEntityTakeDamage(BaseCombatEntity entity, HitInfo info)
+		{
+			if (entity == null ||
+			    info == null ||
+			    entity.IsDestroyed ||
+			    entity is BaseCorpse ||
+			    (info.Initiator != null && info.Initiator == entity)) return;
+
+			try
+			{
+				var attack = 0f;
+				var secure = 0f;
+
+				PlayerData data;
+				SkillData skillData;
+
+				var attacker = info.InitiatorPlayer;
+				if (attacker != null && attacker.userID.IsSteamId())
+				{
+					data = PlayerData.GetOrLoad(attacker.UserIDString);
+					if ((skillData = data?.GetSkillData(SkillType.Attack)) != null &&
+					    !_config.AttackBlackList.Contains(entity.ShortPrefabName))
+						attack = skillData.GetStageValue(attacker);
+				}
+
+				var target = entity as BasePlayer;
+				if (target != null && target.userID.IsSteamId())
+				{
+					data = PlayerData.GetOrLoad(target.UserIDString);
+
+					if ((skillData = data?.GetSkillData(SkillType.Secure)) != null)
+						secure = skillData.GetStageValue(target);
+				}
+
+				var result = attack - secure;
+				if (result != 0)
+				{
+					result = 1f + result / 100f;
+					info.damageTypes.ScaleAll(result);
+				}
+			}
+			catch
+			{
+				// Silently handle damage calculation errors
+			}
+		}
+
+		#endregion
+
+		#region Loot
+
+		private void OnLootEntity(BasePlayer player, LootContainer container)
+		{
+			if (player == null || !player.userID.IsSteamId() || container == null || container.IsDestroyed || 
+			    container.net == null || container.inventory == null ||
+			    _config.ContainersBlackList.Contains(container.ShortPrefabName)) return;
+
+			try
+			{
+				var id = container.net.ID.Value;
+				if (_containers.Contains(id))
+					return;
+
+				var data = PlayerData.GetOrLoad(player.UserIDString);
+
+				SkillData skillData;
+
+				#region ComponentsRates
+
+				if ((skillData = data?.GetSkillData(SkillType.ComponentsRates)) != null)
+				{
+					var items = container.inventory.itemList?.ToList();
+					if (items != null)
+					{
+						foreach (var item in items)
+						{
+							if (item != null && (_config.ComponentsRates.AllowedCategories.Contains(item.info.category) ||
+							                     _config.ComponentsRates.AllowedItems.Contains(item.info.shortname)) &&
+							    !_config.ComponentsRates.BlockList.Contains(item.info.shortname))
+								item.amount = (int)(skillData.GetStageValue(player) * item.amount);
+						}
+					}
+				}
+
+				#endregion
+
+				#region Scrap
+
+				if ((skillData = data?.GetSkillData(SkillType.Scrap)) != null)
+				{
+					var items = container.inventory.itemList?.ToList();
+					if (items != null)
+					{
+						foreach (var item in items)
+						{
+							if (item != null && item.info.shortname == "scrap")
+								item.amount = (int)(skillData.GetStageValue(player) * item.amount);
+						}
+					}
+				}
+
+				#endregion
+
+				_containers.Add(id);
+			}
+			catch (Exception ex)
+			{
+				PrintError($"OnLootEntity error: {ex.Message}");
+			}
+		}
+
+		private void OnContainerDropItems(ItemContainer container)
+		{
+			if (container == null || container.itemList == null) return;
+
+			try
+			{
+				var entity = container.entityOwner as LootContainer;
+				if (entity == null ||
+				    entity.IsDestroyed ||
+				    (!entity.ShortPrefabName.Contains("barrel") &&
+				     !entity.ShortPrefabName.Contains("roadsign")) ||
+				    _config.ContainersBlackList.Contains(entity.ShortPrefabName)) return;
+
+				var player = entity.lastAttacker as BasePlayer;
+				if (player == null || !player.userID.IsSteamId()) return;
+
+				var data = PlayerData.GetOrLoad(player.UserIDString);
+
+				SkillData skillData;
+
+				var items = container.itemList.ToList();
+
+				#region ComponentsRates
+
+				if ((skillData = data?.GetSkillData(SkillType.ComponentsRates)) != null)
+				{
+					foreach (var item in items)
+					{
+						if (item != null && item.info.category == ItemCategory.Component)
+							item.amount = (int)(skillData.GetStageValue(player) * item.amount);
+					}
+				}
+
+				#endregion
+
+				#region Scrap
+
+				if ((skillData = data?.GetSkillData(SkillType.Scrap)) != null)
+				{
+					foreach (var item in items)
+					{
+						if (item != null && item.info.shortname == "scrap")
+							item.amount = (int)(skillData.GetStageValue(player) * item.amount);
+					}
+				}
+
+				#endregion
+			}
+			catch (Exception ex)
+			{
+				PrintError($"OnContainerDropItems error: {ex.Message}");
+			}
+		}
+
+		#endregion
+
+		#region Chance Recover
+
+		private object OnPlayerWound(BasePlayer player, HitInfo info)
+		{
+			if (player == null) return null;
+
+			var stage = PlayerData.GetOrLoad(player.UserIDString)?.GetSkillData(SkillType.StandUpChance)
+				?.GetStage(player);
+			if (stage == null) return null;
+
+			var flag = info != null && info.damageTypes.GetMajorityDamageType() == DamageType.Fall;
+			if (player.IsCrawling())
+			{
+				player.woundedByFallDamage |= flag;
+
+				GoToIncapacitated(player, info, stage);
+			}
+			else
+			{
+				player.woundedByFallDamage = flag;
+
+				if (flag)
+					GoToIncapacitated(player, info, stage);
+				else
+					GoToCrawling(player, info, stage);
+			}
+
+			return true;
+		}
+
+		private void GoToCrawling(BasePlayer player, HitInfo info, StageConf stage)
+		{
+			try
+			{
+				var minHealth = ConVar.Server.crawlingminimumhealth;
+				var maxHealth = ConVar.Server.crawlingmaximumhealth;
+				player.health = Random.Range(minHealth, maxHealth);
+				player.metabolism.bleeding.value = 0.0f;
+				player.healingWhileCrawling = 0.0f;
+				player.WoundedStartSharedCode(info);
+				StartWoundedTick(player, 40, 50, stage);
+				player.SendNetworkUpdateImmediate();
+			}
+			catch (Exception ex)
+			{
+				PrintError($"GoToCrawling error: {ex.Message}");
+			}
+		}
+
+		private void GoToIncapacitated(BasePlayer player, HitInfo info, StageConf stage)
+		{
+			try
+			{
+				if (!player.IsWounded())
+					player.WoundedStartSharedCode(info);
+
+				player.health = Random.Range(2f, 6f);
+				player.metabolism.bleeding.value = 0.0f;
+				player.healingWhileCrawling = 0.0f;
+				player.SetPlayerFlag(BasePlayer.PlayerFlags.Incapacitated, true);
+				player.SetServerFall(true);
+				StartWoundedTick(player, 10, 25, stage);
+				player.SendNetworkUpdateImmediate();
+			}
+			catch (Exception ex)
+			{
+				PrintError($"GoToIncapacitated error: {ex.Message}");
+			}
+		}
+
+		private void StartWoundedTick(BasePlayer player, int minTime, int maxTime, StageConf stage)
+		{
+			player.woundedDuration = Random.Range(minTime, maxTime + 1);
+			player.lastWoundedStartTime = Time.realtimeSinceStartup;
+
+			RecoverComponent recoverPlayer;
+			if (_recoverPlayers.TryGetValue(player.userID, out recoverPlayer))
+				recoverPlayer.Kill();
+
+			player.gameObject.AddComponent<RecoverComponent>()
+				.SetParams(stage);
+		}
+
+		private void OnPlayerRecovered(BasePlayer player)
+		{
+			if (player == null) return;
+
+			RecoverComponent recover;
+			if (_recoverPlayers.TryGetValue(player.userID, out recover) && recover != null)
+				recover.Kill();
+		}
+
+		#endregion
+
+		#region Craft
+
+		private void OnItemCraft(ItemCraftTask task, BasePlayer player, Item item)
+		{
+			if (task == null || player == null || player.inventory.crafting.queue.Count > 0) return;
+
+			CraftingHandle(task, player);
+		}
+
+		private void OnItemCraftFinished(ItemCraftTask task, Item item, ItemCrafter crafter)
+		{
+			if (task == null || crafter == null) return;
+
+			var player = crafter.owner;
+			if (player == null) return;
+
+			TryGetCraftBonus(player, item);
+
+			if (task.amount == 0 && player.inventory.crafting.queue.Count > 1)
+				task = player.inventory.crafting.queue.ElementAt(1);
+
+			CraftingHandle(task, player);
+		}
+
+		private void CraftingHandle(ItemCraftTask task, BasePlayer player)
+		{
+			if (task == null || player == null || task.blueprint == null) return;
+
+			var skillData = PlayerData.GetOrLoad(player.UserIDString)?.GetSkillData(SkillType.CraftSpeed);
+			if (skillData == null) return;
+
+			var rate = 1f - skillData.GetStageValue(player) / 100f;
+			if (rate < 0f) return;
+
+			NextTick(() =>
+			{
+				try
+				{
+					if (player == null || player.IsDestroyed || !player.IsConnected) return;
+					if (task == null || task.blueprint == null) return;
+
+					var currentCraftLevel = player.currentCraftLevel;
+					var duration = ItemCrafter.GetScaledDuration(task.blueprint, currentCraftLevel, false);
+					var scaledDuration = duration * rate;
+
+					task.endTime = Time.realtimeSinceStartup + scaledDuration;
+
+					player.Command("note.craft_start", task.taskUID, scaledDuration, task.amount);
+				}
+				catch (Exception ex)
+				{
+					_instance?.PrintError($"CraftingHandle error: {ex.Message}");
+				}
+			});
+		}
+
+		private void GiveItem(BasePlayer player, int amount, ItemCraftTask task)
+		{
+			var def = task.blueprint.targetItem;
+
+			if (amount <= 0)
+			{
+				PrintWarning(
+					$"Player \"{player.displayName}\" is about to create an item {def.shortname} with amount <= 0!\nReport to the developer!");
+				return;
+			}
+
+			if (!player.IsConnected)
+				return;
+
+			var skin = ItemDefinition.FindSkin(def.itemid, task.skinID);
+
+			var item = ItemManager.Create(def, amount, skin);
+
+			// ReSharper disable CompareOfFloatsByEqualityOperator
+			if (item.hasCondition && task.conditionScale != 1f)
+			{
+				item.maxCondition *= task.conditionScale;
+				item.condition = item.maxCondition;
+			}
+			// ReSharper restore CompareOfFloatsByEqualityOperator
+
+			item.OnVirginSpawn();
+
+			// Analytics.Server was removed in recent Rust updates
+
+			player.Command("note.craft_done", task.taskUID, 1, amount);
+
+			Interface.CallHook("OnItemCraftFinished", task, item);
+
+			if (task.instanceData != null)
+				item.instanceData = task.instanceData;
+
+			if (!string.IsNullOrEmpty(task.blueprint.UnlockAchievment) && ConVar.Server.official)
+				player.ClientRPCPlayer(null, player, "RecieveAchievement", task.blueprint.UnlockAchievment);
+
+			player.GiveItem(item, BaseEntity.GiveItemReason.Crafted);
+		}
+
+
+		private void TryGetCraftBonus(BasePlayer player, Item item)
+		{
+			if (player == null ||
+			    item == null ||
+			    !_config.CraftRates.AllowedList.Contains(item.info.shortname))
+				return;
+
+			var data = PlayerData.GetOrLoad(player.UserIDString);
+
+			var skillData = data?.GetSkillData(SkillType.CraftRates);
+
+			var rate = skillData?.GetStageValue(player) / 100f;
+			if (rate < 0f) return;
+
+			var chance = skillData?.GetStageSecondValue(player);
+			if (Random.Range(0, 100) <= chance)
+			{
+				var amount = Mathf.CeilToInt((item.amount * rate - item.amount).Value);
+				if (amount > 0)
+				{
+					var newItem = ItemManager.Create(item.info, amount, item.skin);
+					if (newItem != null)
+						player.GiveItem(newItem, BaseEntity.GiveItemReason.PickedUp);
+				}
+			}
+		}
+
+		#endregion
+
+		#region Fast Oven
+
+		private void OnOvenCook(BaseOven oven, Item burnable)
+		{
+			if (oven == null || oven.IsDestroyed || burnable == null)
+				return;
+
+			var player = GetPlayerByOven(oven);
+			if (player == null) return;
+
+			try
+			{
+				var amount = 0.5f * oven.GetSmeltingSpeed();
+
+				var list = Pool.GetList<Item>();
+				if (oven.inventory?.itemList != null)
+				{
+					foreach (var item in oven.inventory.itemList)
+					{
+						if (item != null && item.HasFlag(global::Item.Flag.Cooking))
+							list.Add(item);
+					}
+				}
+
+				foreach (var item in list)
+				{
+					if (item == null) continue;
+					var rate = GetRate(player, item.info.shortname);
+					if (rate <= 1) continue;
+
+					var delta = (amount * rate - amount) / list.Count;
+					if (delta > 0.0)
+						item.OnCycle(delta);
+				}
+
+				Pool.FreeList(ref list);
+			}
+			catch (Exception ex)
+			{
+				PrintError($"OnOvenCook error: {ex.Message}");
+			}
+		}
+
+		private void OnOvenToggle(BaseOven oven, BasePlayer player)
+		{
+			if (oven == null || oven.IsDestroyed || player == null || !player.userID.IsSteamId())
+				return;
+				
+			if (_config.OvensBlackList.Exists(x => oven.name.Contains(x)))
+				return;
+
+			_playerByOven[oven] = player;
+		}
+
+		#endregion
+
+		#region Recycler Speed
+
+		private void OnRecyclerToggle(Recycler recycler, BasePlayer player)
+		{
+			if (recycler == null || recycler.IsDestroyed || player == null || !player.userID.IsSteamId()) return;
+
+			var data = PlayerData.GetOrLoad(player.UserIDString);
+			if (data == null) return;
+
+			NextTick(() =>
+			{
+				if (recycler == null || recycler.IsDestroyed) return;
+				
+				if (recycler.IsOn())
+				{
+					var recyclerSpeed = data.GetSkillData(SkillType.RecyclerSpeed)
+						?.GetStageValue(player) ?? 0f;
+
+					if (recyclerSpeed >= 0.5f)
+					{
+						recycler.CancelInvoke(new Action(recycler.RecycleThink));
+						timer.Once(0.1f, () =>
+						{
+							if (recycler != null && !recycler.IsDestroyed && recycler.IsOn())
+								recycler.InvokeRepeating(new Action(recycler.RecycleThink), recyclerSpeed - 0.1f, recyclerSpeed);
+						});
+					}
+				}
+			});
+
+			/*
+			var recycleChange = data.GetSkillData(SkillType.RecyclerChance);
+			if (recycleChange != null)
+			{
+				_playerIdByRecycler[recycler.net.ID] = player.userID;
+			}*/
+		}
+
+		#endregion
+
+		#region Recycler Chance
+
+		/*
+		private void OnItemRecycle(Item item, Recycler recycler)
+		{
+			if (item == null || recycler == null) return;
+
+			ulong playerId;
+			if (!_playerIdByRecycler.TryGetValue(recycler.net.ID, out playerId))
+				return;
+
+			var player = BasePlayer.FindByID(playerId);
+			if (player == null) return;
+
+			var data = PlayerData.GetOrLoad(player.UserIDString);
+			if (data == null) return;
+
+			var recycleChange = data.GetSkillData(SkillType.RecyclerChance);
+			if (recycleChange != null)
+			{
+				var chance = recycleChange.GetStageValue(player);
+				var percent = recycleChange.GetStageSecondValue(player);
+				if (chance > 0f &&
+				    percent > 0f &&
+				    Random.Range(0, 100) <= chance)
+				{
+					var amount = Mathf.FloorToInt(item.amount * (percent / 100f));
+					if (amount > 0)
+					{
+						var clone = CloneItem(item, amount);
+						if (clone != null)
+						{
+							NextTick(() => recycler.MoveItemToOutput(clone));
+						}
+					}
+				}
+			}
+		}
+		*/
+
+		private Item CloneItem(Item item, int amount)
+		{
+			var newItem = ItemManager.CreateByItemID(item.info.itemid);
+			newItem.amount = amount;
+			newItem.skin = item.skin;
+
+			if (item.IsBlueprint())
+				newItem.blueprintTarget = item.blueprintTarget;
+
+			if (item.info.amountType == ItemDefinition.AmountType.Genetics && item.instanceData != null &&
+			    item.instanceData.dataInt != 0)
+			{
+				newItem.instanceData = new ProtoBuf.Item.InstanceData();
+				newItem.instanceData.dataInt = item.instanceData.dataInt;
+				newItem.instanceData.ShouldPool = false;
+			}
+
+			if (item.instanceData != null && item.instanceData.dataInt > 0 && item.info != null &&
+			    item.info.Blueprint != null && item.info.Blueprint.workbenchLevelRequired == 3)
+			{
+				newItem.instanceData = new ProtoBuf.Item.InstanceData();
+				newItem.instanceData.dataInt = item.instanceData.dataInt;
+				newItem.instanceData.ShouldPool = false;
+				newItem.SetFlag(global::Item.Flag.IsOn, item.IsOn());
+			}
+
+			newItem.MarkDirty();
+			return newItem;
+		}
+
+		#endregion
+
+		#region MixingTable Speed
+
+		private void OnMixingTableToggle(MixingTable table, BasePlayer player)
+		{
+			if (table == null || player == null || table.IsOn())
+				return;
+
+			NextTick(() =>
+			{
+				if (table == null || table.IsDestroyed) return;
+				
+				var skillData = PlayerData.GetOrLoad(player.UserIDString)?.GetSkillData(SkillType.MixingTableSpeed);
+				if (skillData == null) return;
+
+				var mixingRate = skillData.GetStageValue(player) / 100f;
+				if (mixingRate < 0f) return;
+
+				try
+				{
+					table.RemainingMixTime *= mixingRate;
+					table.TotalMixTime *= mixingRate;
+					table.SendNetworkUpdateImmediate();
+
+					if (table.RemainingMixTime < 1f)
+					{
+						table.CancelInvoke(new Action(table.TickMix));
+						table.Invoke(new Action(table.TickMix), table.RemainingMixTime);
+					}
+				}
+				catch (Exception ex)
+				{
+					_instance?.PrintError($"MixingTable error: {ex.Message}");
+				}
+			});
+		}
+
+		#endregion
+
+		#region Kits
+
+		private object OnKitCooldown(BasePlayer player, double cooldown)
+		{
+			var skillData = PlayerData.GetOrLoad(player.UserIDString)?.GetSkillData(SkillType.Kits);
+			if (skillData == null) return null;
+
+			var rate = (double) (1f - skillData.GetStageValue(player) / 100f);
+			if (rate <= 0f) return null;
+
+			return cooldown * rate;
+		}
+
+		#endregion
+
+		#region Power Efficiency
+
+		/*
+		private void OnEntitySpawned(BaseEntity entity)
+		{
+			if (entity == null) return;
+
+			//TODO: Fuel Generator
+			//TODO: Electric Battery
+			//TODO: Electric Windmill
+			//TODO: Solar Panel
+		}
+
+		private void ModifyEntityEfficiency(BaseEntity entity)
+		{
+
+			var solarPanel = entity as SolarPanel;
+			if (solarPanel != null)
+			{
+				solarPanel.SetFlag(BaseEntity.Flags.Reserved8, true);
+			}
+		}
+		*/
+
+		#endregion
+
+		#endregion
+
+		#region Image Library
+
+		private void OnPluginLoaded(Plugin plugin)
+		{
+			if (plugin.Name == "ImageLibrary") _enabledImageLibrary = true;
+		}
+
+		private void OnPluginUnloaded(Plugin plugin)
+		{
+			if (plugin.Name == "ImageLibrary") _enabledImageLibrary = false;
+		}
+
+		#endregion
+
+		#endregion
+
+		#region Commands
+
+		private void CmdOpenUi(IPlayer cov, string command, string[] args)
+		{
+			var player = cov?.Object as BasePlayer;
+			if (player == null || !player.userID.IsSteamId()) return;
+
+			try
+			{
+				if (_enabledImageLibrary == false)
+				{
+					SendNotify(player, NoILError, 1);
+					BroadcastILNotInstalled();
+					return;
+				}
+
+				if (!string.IsNullOrEmpty(_config.Permission) &&
+				    !permission.UserHasPermission(player.UserIDString, _config.Permission))
+				{
+					SendNotify(player, NoPermissions, 1);
+					return;
+				}
+
+				MainUi(player, first: true);
+			}
+			catch (Exception ex)
+			{
+				PrintError($"CmdOpenUi error for {player.displayName}: {ex.Message}");
+			}
+		}
+
+		private void AdminCommands(IPlayer cov, string command, string[] args)
+		{
+			if (!cov.IsAdmin) return;
+
+			if (args.Length == 0)
+			{
+				cov.Reply($"Use: /{command} name/steamid");
+				return;
+			}
+
+			var target = BasePlayer.Find(args[0]);
+			if (target == null)
+			{
+				cov.Reply($"Player {args[0]} not found!");
+				return;
+			}
+
+			var data = PlayerData.GetOrCreate(target.UserIDString);
+			if (data == null) return;
+
+			switch (command)
+			{
+				case "giveallskills":
+				{
+					data.Skills.Clear();
+					_config.Skills.ForEach(skill =>
+					{
+						int stage;
+
+						var stages = GetSkillStages(skill, target.UserIDString);
+
+						stage = stages.Keys.Max();
+
+						data.AddSkill(target, skill, stage);
+					});
+
+					cov.Reply($"Player {args[0]} give all skills!");
+					break;
+				}
+
+				case "giveskill":
+				{
+					if (args.Length < 3)
+					{
+						cov.Reply($"Use: /{command} name/steamid [SkillType] [Stage] [ID - for None]");
+						return;
+					}
+
+					SkillType type;
+					int stage;
+					if (!Enum.TryParse(args[1], out type) || !int.TryParse(args[2], out stage))
+					{
+						cov.Reply("Error getting values");
+						return;
+					}
+
+					var id = 0;
+					if (args.Length > 3) int.TryParse(args[3], out id);
+
+					var skill = _config.Skills.Find(x => x.Type == type && x.ID == id);
+					if (skill == null)
+					{
+						cov.Reply($"Skill (type: {type} | id: {id}) not found!");
+						return;
+					}
+
+					var dataSkill = data.GetSkillData(type, id);
+					if (dataSkill != null)
+						data.UpgradeSkill(dataSkill, target, skill, stage);
+					else
+						data.AddSkill(target, skill, stage);
+
+					cov.Reply($"Player {args[0]} give skill: {type} (stage: {stage})!");
+					break;
+				}
+
+				case "removeskill":
+				{
+					if (args.Length < 2)
+					{
+						cov.Reply($"Use: /{command} name/steamid [SkillType] [ID - for None]");
+						return;
+					}
+
+					SkillType type;
+					if (!Enum.TryParse(args[1], out type))
+					{
+						cov.Reply("Error getting values");
+						return;
+					}
+
+					var id = 0;
+					if (args.Length > 2) int.TryParse(args[2], out id);
+
+					var skill = _config.Skills.Find(x => x.Type == type && x.ID == id);
+					if (skill == null)
+					{
+						cov.Reply($"Skill (type: {type} | id: {id}) not found!");
+						return;
+					}
+
+					var dataSkill = data.GetSkillData(type, id);
+					if (dataSkill != null)
+					{
+						data.RemoveSkill(dataSkill, target, skill);
+
+						cov.Reply(
+							$"You removed the {skill.Type} (ID: {skill.ID}) skill from '{target.displayName}' ({target.UserIDString}).");
+					}
+
+					break;
+				}
+			}
+		}
+
+		[ConsoleCommand("UI_Skills")]
+		private void CmdConsoleSkills(ConsoleSystem.Arg arg)
+		{
+			var player = arg?.Player();
+			if (player == null || !arg.HasArgs()) return;
+
+			switch (arg.Args[0])
+			{
+				case "close":
+				{
+					CuiHelper.DestroyUi(player, Layer);
+					break;
+				}
+				case "page":
+				{
+					int page;
+					if (!arg.HasArgs(3) || !int.TryParse(arg.Args[1], out page)) return;
+
+					MainUi(player, arg.Args[2], page);
+					break;
+				}
+
+				case "upgrade":
+				{
+					SkillType type;
+					int page, id;
+					if (!arg.HasArgs(5) ||
+					    !Enum.TryParse(arg.Args[1], out type) ||
+					    !int.TryParse(arg.Args[2], out page) ||
+					    !int.TryParse(arg.Args[4], out id)) return;
+
+					var parent = arg.Args[3];
+
+					var skill = _config.Skills.Find(x => x.Type == type && x.ID == id);
+					if (skill == null) return;
+
+					var cost = GetNextPrice(player, skill);
+					if (cost <= 0)
+					{
+						if (_config.SkillPanel.ShowAllStages && cost == -2)
+						{
+							SendNotify(player, NoPermissions, 1);
+							return;
+						}
+
+						return;
+					}
+
+					var data = PlayerData.GetOrCreate(player.UserIDString);
+					if (data == null) return;
+
+					var nextStage = 1;
+					var dataSkill = data.GetSkillData(type, id);
+					if (dataSkill != null)
+					{
+						nextStage = dataSkill.Stage + 1;
+
+						var stages = GetSkillStages(skill, player.UserIDString);
+
+						if (!stages.ContainsKey(nextStage))
+						{
+							SendNotify(player, _config.MaxLevel.Delay, MaxLevelTitle, MaxLevelDescription,
+								_config.MaxLevel.Image);
+							return;
+						}
+					}
+
+					if (!_config.Economy.RemoveBalance(player, cost))
+					{
+						SendNotify(player, _config.NotMoney.Delay, NotMoneyTitle, NotMoneyDescription,
+							_config.NotMoney.Image);
+						return;
+					}
+
+					if (dataSkill != null)
+						data.UpgradeSkill(dataSkill, player, skill, nextStage);
+					else
+						data.AddSkill(player, skill, nextStage);
+
+					MainUi(player, parent, page);
+					break;
+				}
+
+				case "changedescview":
+				{
+					SkillType type;
+					int page, id;
+					if (!arg.HasArgs(5) ||
+					    !Enum.TryParse(arg.Args[1], out type) ||
+					    !int.TryParse(arg.Args[2], out page) ||
+					    !int.TryParse(arg.Args[4], out id)) return;
+
+					var parent = arg.Args[3];
+
+					var skill = _config.Skills.Find(x => x.Type == type && x.ID == id);
+					if (skill == null) return;
+
+					var data = PlayerData.GetOrCreate(player.UserIDString);
+					if (data == null) return;
+
+					data.ChangeDescriptionView(skill);
+
+					MainUi(player, parent, page);
+					break;
+				}
+
+				case "sendcmd":
+				{
+					if (!arg.HasArgs(2)) return;
+
+					var command = string.Join(" ", arg.Args.Skip(1));
+					if (string.IsNullOrEmpty(command)) return;
+
+					foreach (var check in command.Split('|'))
+						if (check.Contains("chat.say"))
+						{
+							var args = check.Split(' ');
+							player.SendConsoleCommand(
+								$"{args[0]}  \" {string.Join(" ", args.ToList().GetRange(1, args.Length - 1))}\" 0");
+						}
+						else
+						{
+							player.SendConsoleCommand(check);
+						}
+
+					break;
+				}
+			}
+		}
+
+		private void CmdWipeSkills(IPlayer cov, string command, string[] args)
+		{
+			if (!cov.IsServer && !cov.HasPermission(PERM_Wipe)) return;
+
+			PlayerData.StartAll(data => PlayerData.GoWipe(data.UserID, ref data));
+
+			cov.Reply("Players data have been wiped!");
+		}
+
+		#endregion
+
+		#region Interface
+
+		private void MainUi(BasePlayer player, string parent = "Overlay", int page = 0, bool first = false)
+		{
+			if (player == null || !player.IsConnected) return;
+			
+			if (string.IsNullOrEmpty(parent))
+				parent = "Overlay";
+
+			try
+			{
+				var container = new CuiElementContainer();
+
+				var data = PlayerData.GetOrCreate(player.UserIDString);
+
+				var hasBypass = _instance?.HasBypass(player) == true;
+
+			#region Background
+
+			if (first)
+			{
+				CuiHelper.DestroyUi(player, Layer);
+
+				_config.Background.Get(ref container, parent, Layer, true);
+
+				_config.Title.Get(ref container, Layer, null, Msg(MainTitle, player.UserIDString));
+			}
+
+			#endregion
+
+			#region Main
+
+			container.Add(new CuiPanel
+			{
+				RectTransform = {AnchorMin = "0 0", AnchorMax = "1 1"},
+				Image = {Color = "0 0 0 0"}
+			}, Layer, Layer + ".Main");
+
+
+			var playerSkills = GetPlayerSkills(player);
+
+			var skills = playerSkills
+				.Skip(page * _config.SkillPanel.Count)
+				.Take(_config.SkillPanel.Count)
+				.ToList();
+
+			var lines = (int) Math.Ceiling(skills.Count / 2f);
+			var xMargin = _config.SkillPanel.Margin / 2f;
+
+			var ySwitch = (lines * _config.SkillPanel.Height + (lines - 1) * _config.SkillPanel.Margin) / 2f;
+
+			var i = 1;
+			skills.ForEach(skill =>
+			{
+				var xSwitch = i % 2 != 0 && i == skills.Count && skills.Count != _config.SkillPanel.Count
+					? -_config.SkillPanel.Width / 2f
+					: i % 2 != 0
+						? -_config.SkillPanel.Width - xMargin
+						: xMargin;
+
+				_config.SkillPanel.Get(ref container, data, parent, page, Layer + ".Main", i, player, skill, xSwitch,
+					ySwitch - _config.SkillPanel.Height, xSwitch + _config.SkillPanel.Width, ySwitch, hasBypass);
+
+				if (i % 2 == 0)
+					ySwitch = ySwitch - _config.SkillPanel.Height - _config.SkillPanel.Margin;
+				i++;
+			});
+
+			#endregion
+
+			#region Pages
+
+			if (playerSkills.Count > _config.SkillPanel.Count)
+			{
+				if (page != 0)
+					container.Add(new CuiButton
+					{
+						RectTransform =
+						{
+							AnchorMin =
+								_config.Back.AnchorMin,
+							AnchorMax =
+								_config.Back.AnchorMax,
+							OffsetMin =
+								_config.Back.OffsetMin,
+							OffsetMax =
+								_config.Back.OffsetMax
+						},
+						Text =
+						{
+							Text = Msg(player, BackBtn),
+							Align =
+								_config.Back.Align,
+							FontSize =
+								_config.Back.FontSize,
+							Font =
+								_config.Back.Font,
+							Color =
+								_config.Back.Color.Get()
+						},
+						Button =
+						{
+							Color = "0 0 0 0",
+							Command = $"UI_Skills page {page - 1} {parent}"
+						}
+					}, Layer + ".Main");
+
+				if (playerSkills.Count > (page + 1) * _config.SkillPanel.Count)
+					container.Add(new CuiButton
+					{
+						RectTransform =
+						{
+							AnchorMin =
+								_config.Next.AnchorMin,
+							AnchorMax =
+								_config.Next.AnchorMax,
+							OffsetMin =
+								_config.Next.OffsetMin,
+							OffsetMax =
+								_config.Next.OffsetMax
+						},
+						Text =
+						{
+							Text = Msg(player, NextBtn),
+							Align =
+								_config.Next.Align,
+							FontSize =
+								_config.Next.FontSize,
+							Font =
+								_config.Next.Font,
+							Color =
+								_config.Next.Color.Get()
+						},
+						Button =
+						{
+							Color = "0 0 0 0",
+							Command = $"UI_Skills page {page + 1} {parent}"
+						}
+					}, Layer + ".Main");
+			}
+
+			#endregion
+
+			#region Balance
+
+			_config.BalanceText.Get(ref container, Layer + ".Main", null,
+				Msg(Balance, player.UserIDString, _config.Economy.ShowBalance(player)), _config.EnableBalanceIcon);
+
+			#endregion
+
+			#region Close
+
+			_config.CloseLabel.Get(ref container, Layer + ".Main", Layer + ".Close", Msg(player, Close));
+
+			container.Add(new CuiButton
+			{
+				RectTransform = {AnchorMin = "0 0", AnchorMax = "1 1"},
+				Text = {Text = ""},
+				Button = {Color = "0 0 0 0", Command = "UI_Skills close"}
+			}, Layer + ".Close");
+
+			#endregion
+
+			#region Additional Buttons
+
+			if (_config.AdditionalButtons.Buttons.Count > 0)
+			{
+				var xSwitch = -_config.AdditionalButtons.UI.SideIndent;
+
+				_config.AdditionalButtons.Buttons.ForEach(btn =>
+				{
+					if (!btn.Enabled) return;
+
+					container.Add(new CuiElement
+					{
+						Name = Layer + $".Additional.Btn.{xSwitch}",
+						Parent = Layer + ".Main",
+						Components =
+						{
+							new CuiRawImageComponent
+							{
+								Png = ImageLibrary?.Call<string>("GetImage", btn.Image) ?? string.Empty
+							},
+							new CuiRectTransformComponent
+							{
+								AnchorMin = "1 1", AnchorMax = "1 1",
+								OffsetMin =
+									$"{xSwitch - _config.AdditionalButtons.UI.Size} -{_config.AdditionalButtons.UI.Size + _config.AdditionalButtons.UI.UpIndent}",
+								OffsetMax =
+									$"{xSwitch} -{_config.AdditionalButtons.UI.UpIndent}"
+							}
+						}
+					});
+
+					container.Add(new CuiButton
+						{
+							RectTransform = {AnchorMin = "0 0", AnchorMax = "1 1"},
+							Text = {Text = ""},
+							Button =
+							{
+								Command = $"UI_Skills sendcmd {btn.Command}",
+								Color = "0 0 0 0",
+								Close = btn.CloseMenu ? Layer : string.Empty
+							}
+						}, Layer + $".Additional.Btn.{xSwitch}");
+
+					xSwitch = xSwitch - _config.AdditionalButtons.UI.Size - _config.AdditionalButtons.UI.Margin;
+				});
+			}
+
+			#endregion
+
+			CuiHelper.DestroyUi(player, Layer + ".Main");
+				CuiHelper.AddUi(player, container);
+			}
+			catch (Exception ex)
+			{
+				PrintError($"MainUi error for {player?.displayName}: {ex.Message}");
+			}
+		}
+
+		#endregion
+
+		#region Utils
+
+		#region Skills.Cache
+
+		private Dictionary<SkillType, Skill> _skillByType = new Dictionary<SkillType, Skill>();
+
+		private Dictionary<int, Skill> _skillByID = new Dictionary<int, Skill>();
+
+		private Skill FindSkill(SkillType type, int id = 0)
+		{
+			Skill skill;
+
+			switch (type)
+			{
+				case SkillType.Gather:
+				case SkillType.None:
+				{
+					return _skillByID.TryGetValue(id, out skill) ? skill : null;
+				}
+				default:
+				{
+					return _skillByType.TryGetValue(type, out skill) ? skill : null;
+				}
+			}
+		}
+
+		private void LoadSkills()
+		{
+			_config.Skills.ForEach(skill =>
+			{
+				switch (skill.Type)
+				{
+					case SkillType.Gather:
+					case SkillType.None:
+					{
+						if (_skillByID.ContainsKey(skill.ID))
+						{
+							for (var i = 0; i < 3; i++)
+								PrintError($"DUBLICATE SKILL ID: {skill.ID} (TYPE: {skill.Type})");
+							return;
+						}
+
+						_skillByID[skill.ID] = skill;
+						break;
+					}
+					default:
+					{
+						skill.ID = 0;
+
+						if (_skillByType.ContainsKey(skill.Type))
+						{
+							for (var i = 0; i < 3; i++)
+								PrintError($"DUBLICATE SKILL TYPE: {skill.Type}");
+							return;
+						}
+
+						_skillByType[skill.Type] = skill;
+						break;
+					}
+				}
+			});
+		}
+
+		#endregion
+
+		#region Players
+
+		private bool HasBypass(BasePlayer player)
+		{
+			return permission.UserHasPermission(player.UserIDString, PERM_Bypass);
+		}
+
+		private List<Skill> GetPlayerSkills(BasePlayer player)
+		{
+			var playerData = PlayerData.GetOrCreate(player.UserIDString);
+			return _config.Skills
+				.FindAll(skill =>
+				{
+					if (!skill.Enabled)
+						return false;
+
+					var hasPermissions = string.IsNullOrEmpty(skill.Permission) ||
+					                     permission.UserHasPermission(player.UserIDString, skill.Permission);
+					if (!hasPermissions)
+						return false;
+
+					var dataSkill = playerData?.GetSkillData(skill.Type, skill.ID);
+					if (dataSkill == null)
+						if (GetSkillStages(skill, player.UserIDString)[1].GetRequiredSkillStages()
+						    .Any(x => x.Has(player) == false))
+							return false;
+
+					return true;
+				});
+		}
+
+		#endregion
+
+		#region Plugin Loading
+
+		private void UnsubscribeHooks()
+		{
+			Unsubscribe(nameof(OnCollectiblePickup));
+			Unsubscribe(nameof(OnGrowableGathered));
+			Unsubscribe(nameof(OnDispenserBonus));
+			Unsubscribe(nameof(OnDispenserGather));
+			Unsubscribe(nameof(OnEntityTakeDamage));
+			Unsubscribe(nameof(OnContainerDropItems));
+			Unsubscribe(nameof(OnLootEntity));
+			Unsubscribe(nameof(OnPlayerWound));
+			Unsubscribe(nameof(OnItemCraft));
+			Unsubscribe(nameof(OnItemCraftFinished));
+			Unsubscribe(nameof(OnOvenCook));
+			Unsubscribe(nameof(OnOvenToggle));
+			Unsubscribe(nameof(OnKitCooldown));
+			Unsubscribe(nameof(OnRecyclerToggle));
+			Unsubscribe(nameof(OnMixingTableToggle));
+		}
+
+		private void SubscribeHooks()
+		{
+			var types = Pool.GetList<SkillType>();
+			var hooks = new HashSet<string>();
+
+			_config.Skills.ForEach(skill =>
+			{
+				if (!skill.Enabled || types.Contains(skill.Type)) return;
+
+				switch (skill.Type)
+				{
+					case SkillType.Wood:
+					case SkillType.Stones:
+					case SkillType.Metal:
+					case SkillType.Sulfur:
+					case SkillType.Cloth:
+					case SkillType.Butcher:
+					{
+						hooks.Add(nameof(OnCollectiblePickup));
+						hooks.Add(nameof(OnGrowableGathered));
+						hooks.Add(nameof(OnDispenserBonus));
+						hooks.Add(nameof(OnDispenserGather));
+						break;
+					}
+					case SkillType.Attack:
+					case SkillType.Secure:
+					{
+						hooks.Add(nameof(OnEntityTakeDamage));
+						break;
+					}
+					case SkillType.Regeneration:
+					case SkillType.Metabolism:
+					{
+						InitMetabolism();
+						break;
+					}
+					case SkillType.Scrap:
+					case SkillType.ComponentsRates:
+					{
+						hooks.Add(nameof(OnContainerDropItems));
+						hooks.Add(nameof(OnLootEntity));
+						break;
+					}
+					case SkillType.StandUpChance:
+					{
+						hooks.Add(nameof(OnPlayerWound));
+						break;
+					}
+					case SkillType.CraftSpeed:
+					{
+						hooks.Add(nameof(OnItemCraft));
+						hooks.Add(nameof(OnItemCraftFinished));
+						break;
+					}
+					case SkillType.FastOven:
+					{
+						hooks.Add(nameof(OnOvenCook));
+						hooks.Add(nameof(OnOvenToggle));
+						break;
+					}
+					case SkillType.Kits:
+					{
+						hooks.Add(nameof(OnKitCooldown));
+						break;
+					}
+					case SkillType.RecyclerSpeed:
+					{
+						hooks.Add(nameof(OnRecyclerToggle));
+						break;
+					}
+					/*case SkillType.RecyclerChance:
+					{
+						hooks.Add(nameof(OnRecyclerToggle));
+						hooks.Add(nameof(OnItemRecycle));
+						break;
+					}*/
+					case SkillType.MixingTableSpeed:
+					{
+						hooks.Add(nameof(OnMixingTableToggle));
+						break;
+					}
+					default:
+						return;
+				}
+
+				types.Add(skill.Type);
+			});
+
+			Pool.FreeList(ref types);
+
+			foreach (var hook in hooks)
+				Subscribe(hook);
+
+			hooks.Clear();
+		}
+
+		private void RegisterCommands()
+		{
+			AddCovalenceCommand(_config.Command, nameof(CmdOpenUi));
+
+			AddCovalenceCommand(new[] {"giveallskills", "giveskill", "removeskill"}, nameof(AdminCommands));
+
+			AddCovalenceCommand("skills.wipe", nameof(CmdWipeSkills));
+		}
+
+		private void RegisterPermissions()
+		{
+			permission.RegisterPermission(PERM_Bypass, this);
+
+			permission.RegisterPermission(PERM_Wipe, this);
+
+			permission.RegisterPermission(_config.Permission, this);
+
+			_config.Skills.ForEach(skill =>
+			{
+				TryRegisterPermission(skill.Permission);
+
+				foreach (var stage in skill.Stages.Values)
+					TryRegisterPermission(stage.Permission);
+			});
+
+			foreach (var stage in _config.FastOven.Stages.Values)
+				TryRegisterPermission(stage.Permission);
+		}
+
+		private void TryRegisterPermission(string perm)
+		{
+			if (!string.IsNullOrEmpty(perm) && !permission.PermissionExists(perm))
+				permission.RegisterPermission(perm, this);
+		}
+
+		private void CheckOnDuplicates()
+		{
+			var duplicates = _config.Skills
+				.FindAll(x => x.Type == SkillType.None || x.Type == SkillType.Gather)
+				.GroupBy(x => x.ID)
+				.Where(group => group.Count() > 1)
+				.Select(group => group.Key)
+				.ToArray();
+
+			if (duplicates.Length > 0)
+				PrintError(
+					$"Matching item IDs found (None Type): {string.Join(", ", duplicates.Select(x => x.ToString()))}");
+		}
+
+		private void LoadPlayers()
+		{
+			for (var i = 0; i < BasePlayer.activePlayerList.Count; i++)
+				OnPlayerConnected(BasePlayer.activePlayerList[i]);
+		}
+
+		#endregion
+
+		#region Gather
+
+		private Dictionary<string, Modifier.ModifierType> cachedResourceItemTypes =
+			new Dictionary<string, Modifier.ModifierType>
+			{
+				["wood"] = Modifier.ModifierType.Wood_Yield,
+				["stones"] = Modifier.ModifierType.Ore_Yield,
+				["sulfur.ore"] = Modifier.ModifierType.Ore_Yield,
+				["metal.ore"] = Modifier.ModifierType.Ore_Yield,
+				["hq.metal.ore"] = Modifier.ModifierType.Ore_Yield
+			};
+
+		private void OnGather(BasePlayer player, Item item, ResourceDispenser dispenser = null)
+		{
+			if (player == null || !player.userID.IsSteamId() || item == null) return;
+
+			var totalAmount = 0f;
+
+			var playerData = PlayerData.GetOrLoad(player.UserIDString);
+			if (playerData?.Skills == null) return;
+
+			foreach (var dataSkill in playerData.Skills)
+			{
+				var skill = dataSkill?.Skill;
+				if (skill == null) return;
+
+				var amount = dataSkill.GetStageValue(player) / 100f;
+				if (amount <= 0f) return;
+
+				switch (skill.Type)
+				{
+					case SkillType.Wood:
+					{
+						if (item.info.shortname == "wood") totalAmount += amount;
+						break;
+					}
+					case SkillType.Stones:
+					{
+						if (item.info.shortname == "stones") totalAmount += amount;
+						break;
+					}
+					case SkillType.Sulfur:
+					{
+						if (item.info.shortname == "sulfur.ore") totalAmount += amount;
+						break;
+					}
+					case SkillType.Metal:
+					{
+						if (item.info.shortname == "metal.ore" || item.info.shortname == "hq.metal.ore")
+							totalAmount += amount;
+						break;
+					}
+					case SkillType.Cloth:
+					{
+						if (item.info.shortname == "cloth")
+						{
+							if (dispenser != null && dispenser.gatherType == ResourceDispenser.GatherType.Flesh)
+								return;
+
+							totalAmount += amount;
+						}
+
+						break;
+					}
+					case SkillType.Butcher:
+					{
+						if (dispenser == null) return;
+
+						var entity = dispenser.GetComponent<BaseEntity>();
+						if (entity == null) return;
+
+#if TESTING
+						Puts($"[OnGather] Butcher entity: {entity.ShortPrefabName}");
+#endif
+
+						if (!_config.Animals.Contains(entity.ShortPrefabName)) return;
+
+						totalAmount += amount;
+						break;
+					}
+
+					case SkillType.Gather:
+					{
+						if (!string.IsNullOrEmpty(skill.ShortName) &&
+						    skill.ShortName.Split('|').Contains(item.info.shortname))
+							totalAmount += amount;
+
+						break;
+					}
+				}
+			}
+
+			if (totalAmount > 1)
+			{
+				if (_config.UseBonusMode)
+				{
+					var itemAmount = item.amount;
+
+					itemAmount = Mathf.FloorToInt(itemAmount * totalAmount - itemAmount);
+
+					if (itemAmount > 0)
+					{
+						var byItemId = ItemManager.Create(item.info, itemAmount, item.skin);
+						if (byItemId != null)
+							player.GiveItem(byItemId, BaseEntity.GiveItemReason.ResourceHarvested);
+					}
+				}
+				else
+				{
+					item.amount = (int) (item.amount * totalAmount);
+				}
+			}
+		}
+
+		private void OnCollect(
+			BasePlayer player,
+			ItemAmount item,
+			ResourceDispenser dispenser = null)
+		{
+			if (player == null || !player.userID.IsSteamId() || item == null || item.itemDef == null) return;
+
+			var totalAmount = 0f;
+
+			var playerData = PlayerData.GetOrLoad(player.UserIDString);
+			if (playerData?.Skills == null) return;
+
+			foreach (var dataSkill in playerData.Skills)
+			{
+				var skill = dataSkill?.Skill;
+				if (skill == null) return;
+
+				var amount = dataSkill.GetStageValue(player) / 100f;
+				if (amount <= 0f) return;
+
+				switch (skill.Type)
+				{
+					case SkillType.Wood:
+					{
+						if (item.itemDef.shortname == "wood") totalAmount += amount;
+						break;
+					}
+					case SkillType.Stones:
+					{
+						if (item.itemDef.shortname == "stones") totalAmount += amount;
+						break;
+					}
+					case SkillType.Sulfur:
+					{
+						if (item.itemDef.shortname == "sulfur.ore") totalAmount += amount;
+						break;
+					}
+					case SkillType.Metal:
+					{
+						if (item.itemDef.shortname == "metal.ore" || item.itemDef.shortname == "hq.metal.ore")
+							totalAmount += amount;
+						break;
+					}
+					case SkillType.Cloth:
+					{
+						if (item.itemDef.shortname == "cloth")
+						{
+							if (dispenser != null && dispenser.gatherType == ResourceDispenser.GatherType.Flesh) return;
+
+							totalAmount += amount;
+						}
+
+						break;
+					}
+
+					case SkillType.Butcher:
+					{
+						if (dispenser == null) return;
+
+						var entity = dispenser.GetComponent<BaseEntity>();
+						if (entity == null || !_config.Animals.Contains(entity.ShortPrefabName)) return;
+
+						totalAmount += amount;
+						break;
+					}
+
+					case SkillType.Gather:
+					{
+						if (!string.IsNullOrEmpty(skill.ShortName) &&
+						    skill.ShortName.Split('|').Contains(item.itemDef.shortname))
+							totalAmount += amount;
+						break;
+					}
+				}
+			}
+
+			if (totalAmount > 1)
+			{
+				if (_config.UseBonusMode)
+				{
+					var itemAmount = (int)item.amount;
+
+					// TryClearModifier(player, item.itemDef.shortname, ref itemAmount);
+
+					var byItemId = ItemManager.Create(item.itemDef,
+						Mathf.FloorToInt(itemAmount * totalAmount - itemAmount));
+					if (byItemId != null) player.GiveItem(byItemId, BaseEntity.GiveItemReason.ResourceHarvested);
+				}
+				else
+				{
+					item.amount = (int) (item.amount * totalAmount);
+				}
+			}
+		}
+
+		// private void TryClearModifier(BasePlayer player, string shortname, ref int totalAmount)
+		// {
+		// 	Modifier.ModifierType modifierType;
+		// 	if (cachedResourceItemTypes.TryGetValue(shortname, out modifierType))
+		// 	{
+		// 		var modifierValue = player.modifiers.GetValue(modifierType);
+		// 		if (modifierValue > 0)
+		// 		{
+		// 			totalAmount = Mathf.RoundToInt(totalAmount * (1 - modifierValue));
+		// 		}
+		// 	}
+		// }
+
+		#endregion
+
+		#region Images
+
+		private void LoadImages()
+		{
+			if (!ImageLibrary)
+			{
+				BroadcastILNotInstalled();
+			}
+			else
+			{
+				_enabledImageLibrary = true;
+
+				var imagesList = new Dictionary<string, string>();
+
+				LoadImage(ref imagesList, _config.Background.Image);
+
+				LoadImage(ref imagesList, _config.SkillPanel.Background.Image);
+
+				LoadImage(ref imagesList, _config.SkillPanel.AddCostImage.Image);
+
+				_config.Skills.ForEach(skill =>
+				{
+					if (skill.Enabled)
+						LoadImage(ref imagesList, skill.Image);
+				});
+
+				_config.AdditionalButtons.Buttons.ForEach(btn =>
+				{
+					if (btn.Enabled)
+						LoadImage(ref imagesList, btn.Image);
+				});
+
+				ImageLibrary?.Call("ImportImageList", Title, imagesList, 0UL, true);
+			}
+		}
+
+		private void BroadcastILNotInstalled()
+		{
+			for (var i = 0; i < 5; i++) PrintError("IMAGE LIBRARY IS NOT INSTALLED.");
+		}
+
+		private void LoadImage(ref Dictionary<string, string> imagesList, string image)
+		{
+			if (!string.IsNullOrEmpty(image))
+				imagesList.TryAdd(image, image);
+		}
+
+		#endregion
+
+		#region Fast Oven
+
+		private BasePlayer GetPlayerByOven(BaseOven oven)
+		{
+			BasePlayer player;
+			if (_playerByOven.TryGetValue(oven, out player))
+			{
+				if (player == null || player.IsDestroyed || !player.IsConnected)
+				{
+					_playerByOven.Remove(oven);
+					return null;
+				}
+				return player;
+			}
+			return null;
+		}
+
+		private void CleanupOvenDictionary()
+		{
+			var toRemove = _playerByOven.Where(kvp => kvp.Key == null || kvp.Key.IsDestroyed || kvp.Value == null || kvp.Value.IsDestroyed).Select(kvp => kvp.Key).ToList();
+			foreach (var key in toRemove)
+				_playerByOven.Remove(key);
+		}
+
+		private int GetRate(BasePlayer player, string shortname)
+		{
+			var stage = _config.FastOven.GetStage(player);
+			if (stage == null) return 0;
+
+			int rate;
+
+			return stage.Rates.TryGetValue(shortname, out rate) ||
+			       (shortname.Contains(".raw") && stage.Rates.TryGetValue("meat", out rate)) ||
+			       (shortname.Contains(".ore") && stage.Rates.TryGetValue("ore", out rate)) ||
+			       stage.Rates.TryGetValue("*", out rate)
+				? rate
+				: 0;
+		}
+
+		#endregion
+
+		#region Stages
+
+		private interface ISkill
+		{
+			Dictionary<int, IStage> GetStages(string userid);
+		}
+
+		private interface IStage
+		{
+			float GetCost();
+			bool HasAccess(string userid);
+			bool HasPermissions(string userid);
+			List<RequiredSkillStage> GetRequiredSkillStages();
+		}
+
+		private static Dictionary<int, IStage> GetSkillStages(Skill skill, string userid)
+		{
+			switch (skill.Type)
+			{
+				case SkillType.FastOven:
+				{
+					return _config.FastOven.GetStages(userid);
+				}
+				default:
+				{
+					return skill.GetStages(userid);
+				}
+			}
+		}
+
+		#endregion
+
+		#endregion
+
+		#region Lang
+
+		private const string
+			NoILError = "NoILError",
+			DescriptionBtn = "DescriptionBtn",
+			BroadcastLearnSkill = "BroadcastLearnSkill",
+			NextBtn = "NextBtn",
+			BackBtn = "BackBtn",
+			NoPermissions = "NoPermissions",
+			Upgrade = "Upgrade",
+			MainTitle = "Title",
+			Balance = "Balance",
+			MaxLevelTitle = "MaxLevelTitle",
+			MaxLevelDescription = "MaxLevelDescription",
+			NotMoneyTitle = "NotMoneyTitle",
+			NotMoneyDescription = "NotMoneyDescription",
+			Close = "Close";
+
+		protected override void LoadDefaultMessages()
+		{
+			lang.RegisterMessages(new Dictionary<string, string>
+			{
+				[MainTitle] = "SKILLS",
+				[Upgrade] = "UPGRADE",
+				[Balance] = "Balance: {0}$",
+				[MaxLevelTitle] = "Warning",
+				[MaxLevelDescription] = "You have the maximum level!!!",
+				[NotMoneyTitle] = "Warning",
+				[NotMoneyDescription] = "Not enough money!",
+				[NoPermissions] = "You don't have permissions!",
+				[Close] = "✕",
+				[BackBtn] = "«",
+				[NextBtn] = "»",
+				[BroadcastLearnSkill] = "{username} just learned skill {skill_name} LVL {stage}",
+				[DescriptionBtn] = "DESCRIPTION",
+				[NoILError] = "The plugin does not work correctly, contact the administrator!"
+			}, this);
+		}
+
+		private void SendNotify(BasePlayer player, float delay, string title, string description, string image)
+		{
+			if (Notifications)
+				Notifications.Call("ShowNotify", player, delay, Msg(title, player.UserIDString),
+					Msg(description, player.UserIDString), image);
+			else if (_config.UseNotify && (Notify != null || UINotify != null))
+				Interface.Oxide.CallHook("SendNotify", player, 0, Msg(player, description));
+			else
+				Reply(player, description);
+		}
+
+		private void SendNotify(BasePlayer player, string key, int type, params object[] obj)
+		{
+			if (_config.UseNotify && (Notify != null || UINotify != null))
+				Interface.Oxide.CallHook("SendNotify", player, type, Msg(player, key, obj));
+			else
+				Reply(player, key, obj);
+		}
+
+		private void Reply(BasePlayer player, string key, params object[] obj)
+		{
+			SendReply(player, Msg(key, player.UserIDString, obj));
+		}
+
+		private string Msg(string key, string userid = null, params object[] obj)
+		{
+			return string.Format(lang.GetMessage(key, this, userid), obj);
+		}
+
+		private string Msg(BasePlayer player, string key)
+		{
+			return lang.GetMessage(key, this, player.UserIDString);
+		}
+
+		private string Msg(BasePlayer player, string key, params object[] obj)
+		{
+			return string.Format(lang.GetMessage(key, this, player.UserIDString), obj);
+		}
+
+		#endregion
+
+		#region Convert
+
+		#region Data 2.0
+
+		[ConsoleCommand("skills.convert.olddata")]
+		private void CmdConvertOldData(ConsoleSystem.Arg arg)
+		{
+			if (!arg.IsAdmin) return;
+
+			StartConvertOldData();
+		}
+
+		private void StartConvertOldData()
+		{
+			var data = LoadOldData();
+			if (data != null)
+				timer.In(0.3f, () =>
+				{
+					CondertOldData(data);
+
+					PrintWarning($"{data.Players.Count} players was converted!");
+				});
+		}
+
+		private OldPluginData LoadOldData()
+		{
+			OldPluginData data = null;
+			try
+			{
+				data = Interface.Oxide.DataFileSystem.ReadObject<OldPluginData>(Name);
+			}
+			catch (Exception e)
+			{
+				PrintError(e.ToString());
+			}
+
+			return data ?? new OldPluginData();
+		}
+
+		private void CondertOldData(OldPluginData oldData)
+		{
+			if (oldData?.Players == null) return;
+
+			foreach (var check in oldData.Players)
+			{
+				var userId = check.Key.ToString();
+
+				var data = PlayerData.GetOrCreate(userId);
+
+				foreach (var oldSkillData in check.Value.Skills)
+					data.Skills.Add(new SkillData
+					{
+						Type = oldSkillData.Type,
+						ID = oldSkillData.ID,
+						Stage = oldSkillData.Stage
+					});
+
+				data.Permissions = check.Value.Permissions;
+				data.Groups = check.Value.Groups;
+				data.LastWipe = DateTime.UtcNow;
+
+				PlayerData.SaveAndUnload(userId);
+			}
+		}
+
+		#region Classes
+
+		private class OldPluginData
+		{
+			[JsonProperty(PropertyName = "Players", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public Dictionary<ulong, OldPlayerData> Players = new Dictionary<ulong, OldPlayerData>();
+		}
+
+		private class OldPlayerData
+		{
+			[JsonProperty(PropertyName = "Skills", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public List<OldSkillData> Skills = new List<OldSkillData>();
+
+			[JsonProperty(PropertyName = "Permissions", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public HashSet<string> Permissions = new HashSet<string>();
+
+			[JsonProperty(PropertyName = "Groups", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public HashSet<string> Groups = new HashSet<string>();
+		}
+
+		private class OldSkillData
+		{
+			[JsonProperty(PropertyName = "Type")] [JsonConverter(typeof(StringEnumConverter))]
+			public SkillType Type;
+
+			[JsonProperty(PropertyName = "ID")] public int ID;
+
+			[JsonProperty(PropertyName = "Stage")] public int Stage;
+
+			[JsonIgnore] public Skill Skill;
+		}
+
+		#endregion
+
+		#endregion
+
+		#endregion
+
+		#region Data
+
+		#region Player
+
+		private Dictionary<string, PlayerData> _usersData = new Dictionary<string, PlayerData>();
+
+		private class PlayerData
+		{
+			#region Main
+
+			#region Fields
+
+			[JsonProperty(PropertyName = "UserID")]
+			public string UserID;
+
+			[JsonProperty(PropertyName = "Skills", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public List<SkillData> Skills = new List<SkillData>();
+
+			[JsonProperty(PropertyName = "Permissions", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public HashSet<string> Permissions = new HashSet<string>();
+
+			[JsonProperty(PropertyName = "Groups", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public HashSet<string> Groups = new HashSet<string>();
+
+			[JsonProperty(PropertyName = "Opened Descriptions",
+				ObjectCreationHandling = ObjectCreationHandling.Replace)]
+			public List<KeyValuePair<SkillType, int>> OpenedDescriptions = new List<KeyValuePair<SkillType, int>>();
+
+			#endregion
+
+			#region Utils
+
+			public void CheckStages(string userid)
+			{
+				Skills?.ForEach(skill => skill?.CheckStage(userid));
+			}
+
+			public bool CanSeeDescription(Skill skill)
+			{
+				if (_config.SkillPanel.DescriptionButton.Enabled)
+					return OpenedDescriptions.Exists(data => data.Key == skill.Type && data.Value == skill.ID);
+
+				return true;
+			}
+
+			public void ChangeDescriptionView(Skill skill)
+			{
+				if (!_config.SkillPanel.DescriptionButton.Enabled) return;
+
+				if (CanSeeDescription(skill))
+					OpenedDescriptions.RemoveAll(data => data.Key == skill.Type && data.Value == skill.ID);
+				else
+					OpenedDescriptions.Add(new KeyValuePair<SkillType, int>(skill.Type, skill.ID));
+			}
+
+			public void AddSkill(BasePlayer player, Skill skill, int stage)
+			{
+				if (Interface.Oxide.CallHook("CanSkillLearn", player, skill.Type.ToString(), skill.ID, stage) != null)
+					return;
+
+				Skills.Add(new SkillData
+				{
+					ID = skill.ID,
+					Type = skill.Type,
+					Stage = stage
+				});
+
+				CheckSkill(player, skill, stage);
+
+				Interface.Oxide.CallHook("OnSkillLearned", player, skill.Type.ToString(), skill.ID, stage);
+
+				_config.Broadcasting.LearnSkill(player, skill, stage);
+
+				LoadSkillsCache();
+
+				if ((skill.Type == SkillType.Regeneration || skill.Type == SkillType.Metabolism) &&
+				    _instance._metabolismEngine != null)
+				{
+					_instance._metabolismEngine.AddOrUpdate(player);
+				}
+			}
+
+			public void UpgradeSkill(SkillData data, BasePlayer player, Skill skill, int stage)
+			{
+				if (Interface.Oxide.CallHook("CanSkillLearn", player, skill.Type.ToString(), skill.ID, stage) != null)
+					return;
+
+				data.Stage = stage;
+
+				CheckSkill(player, skill, stage);
+
+				data.UpdateStage();
+
+				Interface.Oxide.CallHook("OnSkillLearned", player, skill.Type.ToString(), skill.ID, stage);
+
+				_config.Broadcasting.LearnSkill(player, skill, stage);
+
+				if ((skill.Type == SkillType.Regeneration || skill.Type == SkillType.Metabolism) &&
+				    _instance._metabolismEngine != null)
+					_instance._metabolismEngine.AddOrUpdate(player);
+			}
+
+			public void RemoveSkill(SkillData data, BasePlayer player, Skill skill)
+			{
+				if (Interface.Oxide.CallHook("CanSkillRemove", player, skill.Type.ToString(), skill.ID) != null)
+					return;
+
+				Skills.Remove(data);
+
+				LoadSkillsCache();
+
+				Interface.Oxide.CallHook("OnSkillRemoved", player, skill.Type.ToString(), skill.ID);
+
+				if (!HasSkill(this, SkillType.Regeneration) && !HasSkill(this, SkillType.Metabolism) &&
+				    _instance._metabolismEngine != null)
+					_instance._metabolismEngine.Remove(player);
+			}
+
+			private void CheckSkill(IPlayer player)
+			{
+				Skills?.ForEach(skill => CheckSkill(player?.Object as BasePlayer, skill.Skill, skill.Stage));
+			}
+
+			private void CheckSkill(BasePlayer player, Skill skill, int stage)
+			{
+				if (player == null || skill == null) return;
+
+				GetCommands(player, skill, stage);
+
+				GrantPermissions(player, skill, stage);
+
+				GrantGroups(player, skill, stage);
+			}
+
+			private void GetCommands(BasePlayer player, Skill skill, int stage)
+			{
+				StageConf skillStage;
+				if (skill.Stages.TryGetValue(stage, out skillStage))
+					skillStage?.Commands?.ForEach(command =>
+					{
+						command = command
+							.Replace("\n", "|")
+							.Replace("%steamid%", player.UserIDString, StringComparison.OrdinalIgnoreCase)
+							.Replace("%username%", player.displayName, StringComparison.OrdinalIgnoreCase);
+
+						foreach (var check in command.Split('|'))
+							_instance?.Server.Command(check);
+					});
+			}
+
+			#region Permissions
+
+			private void GrantPermissions(BasePlayer player, Skill skill, int stage)
+			{
+				StageConf skillStage;
+				if (skill.Stages.TryGetValue(stage, out skillStage))
+					skillStage.Permissions?.ForEach(command =>
+					{
+						Permissions.Add(command);
+						foreach (var check in command.Split('|'))
+							_instance?.permission.GrantUserPermission(player.UserIDString, check, null);
+					});
+			}
+
+			private void RevokePermissions(IPlayer player, StageConf stage)
+			{
+				if (player == null || stage == null) return;
+
+				Permissions?.ToList().ForEach(command =>
+				{
+					Permissions.Remove(command);
+					foreach (var check in command.Split('|'))
+						_instance.permission.RevokeUserPermission(player.Id, check);
+				});
+			}
+
+			private void GrantGroups(BasePlayer player, Skill skill, int stage)
+			{
+				StageConf skillStage;
+				if (skill.Stages.TryGetValue(stage, out skillStage))
+					skillStage.Groups?.ForEach(command =>
+					{
+						Groups.Add(command);
+						foreach (var check in command.Split('|'))
+							if (!_instance.permission.UserHasGroup(player.UserIDString, check))
+								_instance.permission.AddUserGroup(player.UserIDString, check);
+					});
+			}
+
+			private void RevokeGroups(IPlayer player, StageConf stage)
+			{
+				if (player == null || stage == null) return;
+
+				Groups?.ToList().ForEach(command =>
+				{
+					Groups.Remove(command);
+
+					foreach (var check in command.Split('|')) _instance.permission.RemoveUserGroup(player.Id, check);
+				});
+			}
+
+			private void Revoke(IPlayer player, PlayerData data)
+			{
+				data.Skills.ForEach(skill => data.Revoke(player, skill.GetStage()));
+			}
+
+			public void Revoke(IPlayer player, StageConf stage)
+			{
+				if (player == null || stage == null) return;
+
+				RevokeGroups(player, stage);
+
+				RevokePermissions(player, stage);
+
+				_instance.TimedPermissions?.Call("OnUserConnected", player);
+			}
+
+			#endregion
+
+			#region Skill Data.Caching
+
+			[JsonIgnore] private Dictionary<int, SkillData> _skillDataByID = new Dictionary<int, SkillData>();
+
+			[JsonIgnore]
+			private Dictionary<SkillType, SkillData> _skillDataByType = new Dictionary<SkillType, SkillData>();
+
+			public SkillData GetSkillData(SkillType type, int id = 0)
+			{
+				SkillData data;
+				if (type == SkillType.None || type == SkillType.Gather
+					    ? _skillDataByID.TryGetValue(id, out data)
+					    : _skillDataByType.TryGetValue(type, out data))
+					return data;
+
+				return null;
+			}
+
+			private void LoadSkillsCache()
+			{
+				_skillDataByID.Clear();
+				_skillDataByType.Clear();
+
+				Skills?.ForEach(skillData =>
+				{
+					switch (skillData.Type)
+					{
+						case SkillType.Gather:
+						case SkillType.None:
+						{
+							_skillDataByID[skillData.ID] = skillData;
+							break;
+						}
+
+						default:
+						{
+							_skillDataByType[skillData.Type] = skillData;
+							break;
+						}
+					}
+				});
+			}
+
+			#endregion
+
+			#endregion
+
+			#endregion
+
+			#region Helpers
+
+			public static string BaseFolder()
+			{
+				return "Skills" + Path.DirectorySeparatorChar + "Players" + Path.DirectorySeparatorChar;
+			}
+
+			public static PlayerData GetOrLoad(string userId)
+			{
+				var data = GetOrLoad(BaseFolder(), userId);
+
+				TryToWipe(userId, ref data);
+
+				return data;
+			}
+
+			public static PlayerData GetOrLoad(string baseFolder, string userId)
+			{
+				PlayerData data;
+				if (_instance._usersData.TryGetValue(userId, out data)) return data;
+
+				if ((data = Load(baseFolder, userId)) != null)
+				{
+					data.CheckStages(userId);
+
+					data.LoadSkillsCache();
+
+					data.UserID = userId;
+				}
+
+				return data;
+			}
+
+			public static PlayerData Load(string baseFolder, string userId)
+			{
+				PlayerData data = null;
+				try
+				{
+					data = ReadOnlyObject(baseFolder + userId);
+				}
+				catch (Exception e)
+				{
+					Interface.Oxide.LogError(e.ToString());
+				}
+
+				return data != null ? _instance._usersData[userId] = data : null;
+			}
+
+			public static PlayerData GetOrCreate(string userId)
+			{
+				return GetOrLoad(userId) ?? (_instance._usersData[userId] = new PlayerData
+				{
+					UserID = userId
+				});
+			}
+
+			public static void Save()
+			{
+				foreach (var userId in _instance._usersData.Keys)
+					Save(userId);
+			}
+
+			public static void Save(string userId)
+			{
+				PlayerData data;
+				if (!_instance._usersData.TryGetValue(userId, out data))
+					return;
+
+				Interface.Oxide.DataFileSystem.WriteObject(BaseFolder() + userId, data);
+			}
+
+			public static void SaveAndUnload(string userId)
+			{
+				Save(userId);
+
+				Unload(userId);
+			}
+
+			public static void Unload(string userId)
+			{
+				_instance._usersData.Remove(userId);
+			}
+
+			#endregion
+
+			#region Utils
+
+			public static string[] GetFiles(string baseFolder)
+			{
+				try
+				{
+					var json = ".json".Length;
+					var paths = Interface.Oxide.DataFileSystem.GetFiles(baseFolder);
+					for (var i = 0; i < paths.Length; i++)
+					{
+						var path = paths[i];
+						var separatorIndex = path.LastIndexOf(Path.DirectorySeparatorChar);
+
+						// We have to do this since GetFiles returns paths instead of filenames
+						// And other methods require filenames
+						paths[i] = path.Substring(separatorIndex + 1, path.Length - separatorIndex - 1 - json);
+					}
+
+					return paths;
+				}
+				catch
+				{
+					return Array.Empty<string>();
+				}
+			}
+
+			private static PlayerData ReadOnlyObject(string name)
+			{
+				return Interface.Oxide.DataFileSystem.ExistsDatafile(name)
+					? Interface.Oxide.DataFileSystem.GetFile(name).ReadObject<PlayerData>()
+					: null;
+			}
+
+			#endregion
+
+			#region Wipe
+
+			[JsonProperty(PropertyName = "Last Wipe")]
+			public DateTime LastWipe;
+
+			public static void TryToWipe(string userId, ref PlayerData data)
+			{
+				if (_config.Wipe && data != null &&
+				    SaveRestore.SaveCreatedTime.ToUniversalTime() > data.LastWipe.ToUniversalTime())
+					GoWipe(userId, ref data);
+			}
+
+			public static void GoWipe(string userId, ref PlayerData data)
+			{
+				var newSkills = new List<SkillData>();
+
+				if (HasSkill(data, SkillType.TransferWipe))
+				{
+					newSkills = data.Skills.ToList();
+
+					if (_config.TransferWipe.ResetSigle) newSkills.RemoveAll(x => x.Type == SkillType.TransferWipe);
+				}
+
+				var player = _instance.covalence.Players.FindPlayerById(userId);
+
+				data.Revoke(player, data);
+
+				_instance._usersData[userId] = data = new PlayerData
+				{
+					UserID = userId,
+					Skills = newSkills,
+					LastWipe = DateTime.UtcNow
+				};
+
+				data.CheckSkill(player);
+
+				Save(userId);
+			}
+
+			#endregion
+
+			#region All Players
+
+			public static void StartAll(Action<PlayerData> action)
+			{
+				var users = GetFiles(BaseFolder());
+
+				foreach (var userId in users)
+				{
+					var loaded = _instance._usersData.ContainsKey(userId);
+
+					var data = GetOrLoad(userId);
+					if (data == null) continue;
+
+					action.Invoke(data);
+
+					Save(userId);
+
+					if (!loaded)
+						Unload(userId);
+				}
+			}
+
+			#endregion
+		}
+
+		private class SkillData
+		{
+			[JsonProperty(PropertyName = "Type")] [JsonConverter(typeof(StringEnumConverter))]
+			public SkillType Type;
+
+			[JsonProperty(PropertyName = "ID")] public int ID;
+
+			[JsonProperty(PropertyName = "Stage")] public int Stage;
+
+			[JsonIgnore] private Skill _skill;
+
+			[JsonIgnore] public Skill Skill => _skill ?? (_skill = _instance.FindSkill(Type, ID));
+
+			[JsonIgnore] private StageConf _stageConf;
+
+			public StageConf GetStage(BasePlayer player = null)
+			{
+				if (_stageConf == null) UpdateStage();
+
+				if (player != null && _instance.HasBypass(player))
+					return Skill != null && Skill.Stages.Count > 0 ? Skill.Stages[Skill.Stages.Max(x => x.Key)] : null;
+
+				return _stageConf;
+			}
+
+			public float GetStageValue(BasePlayer player = null)
+			{
+				return GetStage(player)?.Value ?? 0f;
+			}
+
+			public float GetStageSecondValue(BasePlayer player = null)
+			{
+				return GetStage(player)?.Value2 ?? 0f;
+			}
+
+			public void CheckStage(string userid)
+			{
+				if (Skill == null) return;
+
+				var stages = GetSkillStages(Skill, userid);
+				if (!stages.ContainsKey(Stage))
+					if (stages.Count > 0)
+						Stage = stages.Max(x => x.Key);
+			}
+
+			public void UpdateStage()
+			{
+				Skill?.Stages.TryGetValue(Stage, out _stageConf);
+			}
+		}
+
+		#region Utils
+
+		private double GetNextPrice(BasePlayer player, Skill skill)
+		{
+			var result = -1;
+
+			var data = PlayerData.GetOrCreate(player.UserIDString);
+			if (data == null) return result;
+
+			var stages = GetSkillStages(skill, player.UserIDString);
+
+			var skillData = data.GetSkillData(skill.Type, skill.ID);
+			if (skillData == null)
+			{
+				if (stages[1].GetRequiredSkillStages().Any(x => x.Has(player) == false))
+					return result;
+
+				if (_config.SkillPanel.ShowAllStages && stages[1].HasAccess(player.UserIDString) == false)
+					return -2;
+
+				return stages[1].GetCost();
+			}
+
+			var nextStage = skillData.Stage + 1;
+
+			if (!stages.ContainsKey(nextStage))
+				return result;
+
+			if (stages[nextStage].GetRequiredSkillStages().Any(x => x.Has(player) == false))
+				return result;
+
+			if (_config.SkillPanel.ShowAllStages && stages[nextStage].HasPermissions(player.UserIDString) == false)
+				return -2;
+
+			return stages[nextStage].GetCost();
+		}
+
+		#endregion
+
+		#endregion
+
+		#region Containers
+
+		private void SaveContainers()
+		{
+			Interface.Oxide.DataFileSystem.WriteObject($"{Name}/Containers", _containers);
+		}
+
+		private void LoadContainers()
+		{
+			try
+			{
+				_containers = Interface.Oxide.DataFileSystem.ReadObject<HashSet<ulong>>($"{Name}/Containers");
+			}
+			catch (Exception e)
+			{
+				PrintError(e.ToString());
+			}
+
+			if (_containers == null) _containers = new HashSet<ulong>();
+		}
+
+		#endregion
+
+		#endregion
+
+		#region Components
+
+		#region Recover Component
+
+		private class RecoverComponent : FacepunchBehaviour
+		{
+			private BasePlayer player;
+
+			private StageConf Stage;
+
+			private float incapacitatedrecoverchance;
+			private float woundedrecoverchance;
+
+			private bool Unload;
+
+			private void Awake()
+			{
+				player = GetComponent<BasePlayer>();
+
+				_instance._recoverPlayers[player.userID] = this;
+			}
+
+			public void SetParams(StageConf stage)
+			{
+				Stage = stage;
+				incapacitatedrecoverchance = stage.Value / 100f;
+				woundedrecoverchance = stage.Value2 / 100f;
+
+				Invoke(WoundingTick, 1f);
+			}
+
+			public void WoundingTick()
+			{
+				try
+				{
+					if (player == null || player.IsDestroyed || player.IsDead())
+						return;
+						
+					if (player.TimeSinceWoundedStarted >= (double)player.woundedDuration)
+					{
+						var num1 = player.IsIncapacitated()
+							? incapacitatedrecoverchance
+							: (double)woundedrecoverchance;
+
+						var t = (float)((player.metabolism.hydration.Fraction() +
+						                  (double)player.metabolism.calories.Fraction()) / 2.0);
+						double num2 = Mathf.Lerp(0.0f, ConVar.Server.woundedmaxfoodandwaterbonus, t);
+						if (Random.value < (double)Mathf.Clamp01((float)(num1 + num2)))
+						{
+							player.RecoverFromWounded();
+						}
+						else if (player.woundedByFallDamage)
+						{
+							player.Die();
+						}
+						else
+						{
+							var medkitDef = ItemManager.FindItemDefinition("largemedkit");
+							var itemByItemId = medkitDef != null 
+								? player.inventory?.containerBelt?.FindItemByItemID(medkitDef.itemid)
+								: null;
+								
+							if (itemByItemId != null)
+							{
+								itemByItemId.UseItem();
+								player.RecoverFromWounded();
+							}
+							else
+							{
+								player.Die();
+							}
+						}
+					}
+					else
+					{
+						if (player.IsSwimming() && player.IsCrawling() && _instance != null)
+							_instance.GoToIncapacitated(player, null, Stage);
+
+						Invoke(WoundingTick, 1f);
+					}
+				}
+				catch (Exception ex)
+				{
+					_instance?.PrintError($"WoundingTick error: {ex.Message}");
+				}
+			}
+
+			private void OnDestroy()
+			{
+				CancelInvoke();
+
+				if (Unload)
+					player.Invoke(player.WoundingTick, 1);
+
+				_instance?._recoverPlayers.Remove(player.userID);
+			}
+
+			public void Kill(bool unload = false)
+			{
+				Unload = unload;
+
+				DestroyImmediate(this);
+			}
+		}
+
+		#endregion
+
+		#region Regen&Metabolism
+
+		private MetabolismComponent _metabolismEngine;
+
+		private void InitMetabolism()
+		{
+			if (_metabolismEngine != null)
+				return;
+
+			_metabolismEngine = new GameObject()
+				.AddComponent<MetabolismComponent>();
+		}
+
+		private class MetabolismData
+		{
+			[JsonIgnore] public BasePlayer Player;
+
+			public bool HasMetabolism;
+
+			public float MetabolismStageValue;
+
+			public bool HasRegeneration;
+
+			public float RegenerationStageValue;
+		}
+
+		private class MetabolismComponent : FacepunchBehaviour
+		{
+			private Dictionary<ulong, MetabolismData> Players = new Dictionary<ulong, MetabolismData>();
+
+			private Dictionary<ulong, float> _timeSinceLastMetabolism = new Dictionary<ulong, float>();
+
+			private bool _started;
+
+			private void Awake()
+			{
+				TryStartInvoking();
+			}
+
+			private void TryStartInvoking()
+			{
+				if (_started)
+				{
+					if (Players.Count == 0)
+					{
+						CancelInvoke(Handler);
+						_started = false;
+					}
+
+					return;
+				}
+
+				if (Players.Count > 0)
+				{
+					InvokeRepeating(Handler, 0.75f, 0.75f);
+					_started = true;
+				}
+			}
+
+			private void Handler()
+			{
+				foreach (var player in Players) PlayerMetabolismHandler(player.Value);
+			}
+
+			private void PlayerMetabolismHandler(MetabolismData data)
+			{
+				var player = data.Player;
+
+				if (data.HasMetabolism)
+				{
+					var value = data.MetabolismStageValue;
+					if (value > 0.1f)
+					{
+						player.metabolism.hydration.Add(value);
+
+						player.metabolism.calories.Add(value);
+					}
+				}
+
+				if (data.HasRegeneration)
+				{
+					var nowTime = Time.time;
+
+					float oldTime;
+					if (_timeSinceLastMetabolism.TryGetValue(player.userID, out oldTime))
+					{
+						var healAmount = data.RegenerationStageValue / 60f;
+
+						if (nowTime - oldTime > 0.1f) player.Heal(healAmount);
+					}
+
+					_timeSinceLastMetabolism[player.userID] = nowTime;
+				}
+			}
+
+			public void AddOrUpdate(BasePlayer player)
+			{
+				var playerData = PlayerData.GetOrLoad(player.UserIDString);
+				if (playerData == null)
+				{
+					return;
+				}
+
+				MetabolismData data;
+				var newValue = !Players.TryGetValue(player.userID, out data);
+				if (newValue)
+					data = new MetabolismData();
+
+				SkillData skillData;
+
+				data.Player = player;
+
+				data.HasMetabolism = (skillData = playerData.GetSkillData(SkillType.Metabolism)) != null;
+				if (data.HasMetabolism)
+					data.MetabolismStageValue = skillData?.GetStageValue(player) ?? 0f;
+
+				data.HasRegeneration = (skillData = playerData.GetSkillData(SkillType.Regeneration)) != null;
+				if (data.HasRegeneration)
+					data.RegenerationStageValue = skillData?.GetStageValue(player) ?? 0f;
+
+				if (newValue && (data.HasMetabolism || data.HasRegeneration)) Players[player.userID] = data;
+
+				TryStartInvoking();
+			}
+
+			public void Remove(BasePlayer player)
+			{
+				if (Players.ContainsKey(player.userID))
+				{
+					Players.Remove(player.userID);
+
+					TryStartInvoking();
+				}
+			}
+
+			#region Destroy
+
+			private void OnDestroy()
+			{
+				CancelInvoke();
+			}
+
+			public void Kill()
+			{
+				DestroyImmediate(this);
+			}
+
+			#endregion
+		}
+
+		#endregion
+
+		#endregion
+
+		#region API
+
+		private static bool HasSkill(string userId, SkillType type)
+		{
+			return HasSkill(PlayerData.GetOrLoad(userId), type);
+		}
+
+		private static bool HasSkill(PlayerData data, SkillType type)
+		{
+			if (data == null) return false;
+
+			var skillData = data.GetSkillData(type);
+			var skill = skillData?.Skill;
+
+			return skill != null && skill.Stages.ContainsKey(skillData.Stage);
+		}
+
+		#endregion
+	}
+}
