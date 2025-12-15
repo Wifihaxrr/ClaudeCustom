@@ -215,6 +215,21 @@ CuiHelper.AddUi(player, container);
 ### Error: Config not saving properly
 **Fix:** Ensure [JsonProperty] attributes on all config fields
 
+### Error: CS0103 - 'LogWarning' does not exist in current context
+**Cause:** Using Unity/generic C# logging instead of Oxide methods
+**Fix:** Use Oxide's built-in logging methods:
+```csharp
+// WRONG - These will cause compilation errors
+LogWarning("msg");
+LogError("msg");
+Debug.Log("msg");
+
+// CORRECT - Use these Oxide methods
+Puts("Info message");           // Console output
+PrintWarning("Warning message"); // Yellow warning  
+PrintError("Error message");     // Red error
+```
+
 ---
 
 ## HOOK SIGNATURES (MUST BE EXACT)
