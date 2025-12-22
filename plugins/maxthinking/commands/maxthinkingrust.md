@@ -1,12 +1,27 @@
 ---
-description: "Use /maxthinkingrust <TASK> for Rust Oxide plugin development. Generates working plugins."
+description: "Use /maxthinkingrust <TASK> for Rust Oxide plugin development. Generates working plugins with comprehensive knowledge base."
 author: MaxThinking
-version: 4.0.0
+version: 5.0.0
 ---
 
-# RUST OXIDE PLUGIN GENERATOR
+# RUST OXIDE PLUGIN GENERATOR (ENHANCED)
 
 **User Request:** $ARGUMENTS
+
+---
+
+## STEP 0: READ KNOWLEDGE BASE (For Complex Requests)
+
+For complex plugin requests, read the relevant knowledge files FIRST:
+
+| If request involves... | Read these files |
+|------------------------|------------------|
+| Complex structure | `oxide_architecture.md` |
+| NPCs/AI/Vehicles/Economy | `oxide_templates_advanced.md` |
+| Performance concerns | `oxide_performance.md` |
+| Timers/Async operations | `oxide_threading.md` |
+| Version compatibility | `oxide_api_extended.md`, `oxide_compatibility.md` |
+| UI systems | `oxide_templates_advanced.md` |
 
 ---
 
@@ -300,7 +315,18 @@ namespace Oxide.Plugins
 
 ---
 
-## CRITICAL RULES
+## ADVANCED TEMPLATES (Read `oxide_templates_advanced.md`)
+
+For complex requests not covered above:
+- **NPC/AI Systems** → See NPC template
+- **Economy Integration** → See Economy template
+- **Zone Systems** → See Zone template
+- **Vehicle Management** → See Vehicle template
+- **Data Migration** → See Migration template
+
+---
+
+## CRITICAL RULES (Read `oxide_linting.md` for complete list)
 
 ### LOGGING - USE THESE:
 - `Puts("message");` - normal log
@@ -319,12 +345,50 @@ permission.UserHasPermission(player.UserIDString, "perm")  // CORRECT
 
 ---
 
+## PRE-DELIVERY VALIDATION (From `oxide_validation.md`)
+
+Before delivering, verify:
+1. ✅ No `LogWarning()`, `LogError()`, or `Debug.Log()`
+2. ✅ Permissions use `player.UserIDString`
+3. ✅ Has `Init()` registering permissions
+4. ✅ Has `Unload()` cleaning up (timers, UI, entities)
+5. ✅ Timer callbacks check `player != null && player.IsConnected`
+6. ✅ Entity operations check `entity != null && !entity.IsDestroyed`
+
+---
+
+## KNOWLEDGE BASE REFERENCE
+
+| File | Purpose |
+|------|---------|
+| `oxide_architecture.md` | Plugin structure patterns |
+| `oxide_performance.md` | Memory & optimization |
+| `oxide_threading.md` | Thread safety patterns |
+| `oxide_api_extended.md` | Version compatibility |
+| `oxide_templates_advanced.md` | Complex templates |
+| `oxide_linting.md` | Validation rules |
+| `oxide_lifecycle.md` | Init/Unload patterns |
+| `oxide_errors.md` | Error handling |
+| `oxide_docs_lookup.md` | Hook & prefab reference |
+| `oxide_testing.md` | Testing patterns |
+| `oxide_benchmarks.md` | Performance testing |
+| `oxide_compatibility.md` | Version checks |
+| `oxide_validation.md` | Release validation |
+| `oxide_security.md` | Security patterns |
+| `oxide_docgen.md` | Documentation templates |
+| `rust_reference.md` | Complete API reference |
+| `rust_examples.md` | Working plugin examples |
+| `rust_memory.md` | Persistent memory |
+
+---
+
 ## YOUR TASK
 
 1. Read the user request above
-2. Pick the template that matches (A-F)
-3. Copy the template EXACTLY
-4. Change ONLY what is needed (plugin name, values, commands)
+2. For simple requests: Pick template (A-F), copy exactly, modify only what's needed
+3. For complex requests: Read relevant knowledge base files first
+4. Apply validation checklist before delivery
 5. Output the complete .cs file
 
 **IMPORTANT**: Do NOT add features not requested. Keep it simple!
+
